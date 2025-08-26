@@ -1,13 +1,12 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import BpmnJS from 'bpmn-js';
+import BpmnJS from 'bpmn-js/dist/bpmn-navigated-viewer.development.js';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 
 export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: string; descriptionsUrl: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [viewer, setViewer] = useState<any>(null);
-  const [zoom, setZoom] = useState(100);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
@@ -80,7 +79,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
             const canvas = currentViewer.get('canvas');
             if (canvas && canvas.zoom) {
               canvas.zoom('fit-viewport');
-              setZoom(100);
             }
           } catch (zoomError) {
             console.warn('Erro ao ajustar zoom inicial:', zoomError);
@@ -212,52 +210,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
     };
   }, [bpmnUrl, descriptionsUrl]); // Removido 'viewer' das dependências
 
-  const handleZoomIn = () => {
-    if (viewer) {
-      try {
-        const canvas = viewer.get('canvas');
-        if (canvas && typeof canvas.zoom === 'function') {
-          const currentZoom = canvas.zoom();
-          const newZoom = currentZoom * 1.2;
-          canvas.zoom(newZoom);
-          setZoom(Math.round(newZoom * 100));
-        }
-      } catch (error) {
-        console.error('Erro no zoom in:', error);
-      }
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (viewer) {
-      try {
-        const canvas = viewer.get('canvas');
-        if (canvas && typeof canvas.zoom === 'function') {
-          const currentZoom = canvas.zoom();
-          const newZoom = currentZoom * 0.8;
-          canvas.zoom(newZoom);
-          setZoom(Math.round(newZoom * 100));
-        }
-      } catch (error) {
-        console.error('Erro no zoom out:', error);
-      }
-    }
-  };
-
-  const handleZoomFit = () => {
-    if (viewer) {
-      try {
-        const canvas = viewer.get('canvas');
-        if (canvas && typeof canvas.zoom === 'function') {
-          canvas.zoom('fit-viewport');
-          setZoom(100);
-        }
-      } catch (error) {
-        console.error('Erro no zoom fit:', error);
-      }
-    }
-  };
-
   if (error) {
     return (
       <div className="w-full p-6 bg-red-50 border border-red-200 rounded-lg">
@@ -275,37 +227,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
 
   return (
     <div className="w-full">
-      {/* Controles de Zoom */}
-      <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg border">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium text-gray-700">Zoom:</span>
-          <span className="text-sm text-gray-600">{zoom}%</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={handleZoomOut}
-            className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
-            title="Zoom Out"
-          >
-            -
-          </button>
-          <button
-            onClick={handleZoomFit}
-            className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
-            title="Ajustar à tela"
-          >
-            Ajustar
-          </button>
-          <button
-            onClick={handleZoomIn}
-            className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
-            title="Zoom In"
-          >
-            +
-          </button>
-        </div>
-      </div>
-      
       {/* Container do Diagrama */}
       <div 
         ref={ref} 
@@ -325,7 +246,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
       
       {/* Instruções */}
       <div className="mt-3 text-xs text-gray-500 text-center">
-        <p>Use os botões de zoom ou <kbd className="px-1 py-0.5 bg-gray-100 rounded">Ctrl + Scroll</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
+        <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
       </div>
     </div>
   );
