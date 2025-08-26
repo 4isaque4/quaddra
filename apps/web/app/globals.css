@@ -1,50 +1,67 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --primary-color: #ff6f00;
+    --dark-gray: #333;
+    --medium-gray: #606770;
+    --light-gray: #f0f2f5;
+    --white: #ffffff;
   }
-}
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.imgDark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
   html {
-    color-scheme: dark;
+    scroll-behavior: smooth;
   }
 
-  .imgLight {
-    display: none;
+  body {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  .imgDark {
-    display: unset;
+}
+
+@layer components {
+  .container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .section {
+    @apply py-16 lg:py-20;
+  }
+
+  .section-alt {
+    @apply bg-gray-50;
+  }
+
+  .cta-button {
+    @apply inline-block bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-full font-semibold transition-all duration-300 hover:transform hover:-translate-y-1 hover:shadow-lg;
+  }
+
+  .service-card {
+    @apply bg-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:transform hover:-translate-y-2;
+  }
+
+  .nav-link {
+    @apply text-gray-600 hover:text-orange-500 font-semibold px-4 py-2 relative transition-colors duration-300;
+  }
+
+  .nav-link::after {
+    @apply content-[''] absolute bottom-0 left-0 w-full h-0.5 bg-orange-500 transform scale-x-0 origin-bottom-right transition-transform duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply scale-x-100 origin-bottom-left;
+  }
+
+  .nav-links {
+    @apply fixed top-20 w-full h-screen bg-white flex flex-col items-center justify-center gap-8 transition-all duration-300 lg:static lg:flex-row lg:h-auto lg:w-auto lg:bg-transparent lg:shadow-none;
+  }
+
+  .nav-links.left-0 {
+    left: 0;
+  }
+
+  .nav-links.-left-full {
+    left: -100%;
   }
 }
