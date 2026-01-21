@@ -1,0 +1,58 @@
+{
+  "processo": "Comercial v2.0",
+  "arquivoBpmn": "Comercial v2.0.bpmn",
+  "elements": {
+    "Id_cf9b3e35-2593-4fb6-9d04-cb087d4db97b": {
+      "id": "Id_cf9b3e35-2593-4fb6-9d04-cb087d4db97b",
+      "nome": "Prospectar leads",
+      "ator": "Executivo de Vendas",
+      "entradas": [
+        "<não há>"
+      ],
+      "saidas": [
+        "Lead para ser Cadastrado"
+      ],
+      "ferramentas": [
+        "Neppo"
+      ],
+      "passoAPasso": [
+        "O Executivo de Vendas, dentro de suas atribuições, inicia o processo pesquisando possíveis interessados em adquirir os produtos da Vale Shop, avaliando contatos, mensagens recebidas via Portal, etc.",
+        "O Executivo de Vendas entra em contato com o interessado.",
+        "O Executivo de Vendas apresenta os produtos e serviços da Vale Shop."
+      ],
+      "popItReferencia": [
+        "POP - COMER 002- Processo de Vendas"
+      ],
+      "observacoes": [
+        "A ferramenta Neppo é do mesmo fabricante do ERP Sankhya. Entretanto, há outras ferramentas que podem ser utilizadas para esta atividade, como FlowBiz, por exemplo."
+      ],
+      "fonteDocx": "TEMPLATE Descrição do Processo v4 FERRAMENTA Exemplo.docx"
+    },
+    "Id_c564a55c-ab9c-44ca-ba2d-bc8724a19468": {
+      "id": "Id_c564a55c-ab9c-44ca-ba2d-bc8724a19468",
+      "nome": "Cadastrar leads",
+      "ator": "Executivo de Vendas",
+      "entradas": [
+        "Lead identificado"
+      ],
+      "saidas": [
+        "Lead cadastrado"
+      ],
+      "ferramentas": [
+        "Neppo"
+      ],
+      "passoAPasso": [
+        "Caso algum lead contactado manifeste interesse nos produtos e serviços da Vale Shop, o Executivo de Vendas faz o cadastramento deste lead no sistema Ploomes."
+      ],
+      "popItReferencia": [
+        "IT – COMER 008 – Cadastro de Cliente Pessoa Ploomes"
+      ],
+      "observacoes": [
+        "A ferramenta Ploomes já está integrada com o ERP Sankhya.",
+        "Esta atividade representa e sinaliza o início do Workflow de Vendas, apoiado pela ferramenta Flow."
+      ],
+      "fonteDocx": "TEMPLATE Descrição do Processo v4 FERRAMENTA Exemplo.docx"
+    }
+  }
+}
+

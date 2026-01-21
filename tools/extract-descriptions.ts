@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
-import { join, resolve } from 'path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { join, resolve, relative } from 'path';
 
 interface BpmnElement {
   id: string;
@@ -85,6 +85,27 @@ function extractDescriptionsFromBpmn(xmlContent: string, filename: string): Proc
   return elements;
 }
 
+function getAllBpmnFiles(dir: string, baseDir: string, fileList: Array<{ path: string, name: string }> = []): Array<{ path: string, name: string }> {
+  const files = readdirSync(dir);
+  
+  files.forEach(file => {
+    const filePath = join(dir, file);
+    const stat = statSync(filePath);
+    
+    if (stat.isDirectory()) {
+      getAllBpmnFiles(filePath, baseDir, fileList);
+    } else if (file.toLowerCase().endsWith('.bpmn')) {
+      const relativePath = relative(baseDir, filePath).replace(/\\/g, '/');
+      fileList.push({
+        path: relativePath,
+        name: file
+      });
+    }
+  });
+  
+  return fileList;
+}
+
 function main() {
   try {
     const currentDir = process.cwd();
@@ -100,26 +121,26 @@ function main() {
       process.exit(1);
     }
     
-    const bpmnFiles = readdirSync(bpmnDir).filter(file => file.endsWith('.bpmn'));
-    console.log(`📋 Encontrados ${bpmnFiles.length} arquivos BPMN:`, bpmnFiles);
+    const bpmnFiles = getAllBpmnFiles(bpmnDir, bpmnDir);
+    console.log(`📋 Encontrados ${bpmnFiles.length} arquivos BPMN (recursivo)`);
     
     const allDescriptions: DescriptionsData = { processes: {} };
     
-    bpmnFiles.forEach(filename => {
+    bpmnFiles.forEach(({ path, name }) => {
       try {
-        const filePath = join(bpmnDir, filename);
-        console.log(`\n📖 Processando: ${filename}`);
+        const filePath = join(bpmnDir, path.replace(/\//g, '\\'));
+        console.log(`\n📖 Processando: ${path}`);
         
         const xmlContent = readFileSync(filePath, 'utf8');
-        const processName = filename.replace('.bpmn', '');
+        const processName = path.replace(/\.bpmn$/i, '');
         
-        const elements = extractDescriptionsFromBpmn(xmlContent, filename);
+        const elements = extractDescriptionsFromBpmn(xmlContent, path);
         allDescriptions.processes[processName] = { elements };
         
         console.log(`✅ Extraídos ${Object.keys(elements).length} elementos de ${processName}`);
         
       } catch (error) {
-        console.error(`❌ Erro ao processar ${filename}:`, error);
+        console.error(`❌ Erro ao processar ${path}:`, error);
       }
     });
     

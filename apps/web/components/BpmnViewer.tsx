@@ -3,11 +3,29 @@ import React, { useEffect, useRef, useState } from 'react';
 import BpmnJS from 'bpmn-js/dist/bpmn-navigated-viewer.development.js';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
+import Draggable from 'react-draggable';
 
-export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: string; descriptionsUrl: string }) {
+type BpmnViewerProps = {
+  bpmnUrl: string
+  descriptionsUrl: string
+  contentUrl?: string
+}
+
+export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string>('');
+  const [selected, setSelected] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editedData, setEditedData] = useState<any>(null);
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [localEdits, setLocalEdits] = useState<Record<string, any>>({});
+
+  // Debug: Log quando showModal muda
+  useEffect(() => {
+    console.log('[Modal] showModal alterado para:', showModal);
+  }, [showModal]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -15,9 +33,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
     console.log('Iniciando BpmnViewer...');
     console.log('URLs:', { bpmnUrl, descriptionsUrl });
     
-    let overlays: any, eventBus: any;
+    let overlays: any, eventBus: any, canvas: any, elementRegistry: any;
     let active: Record<string, any> = {};
     let currentViewer: any = null;
+    let selectionMarker: string | null = null;
+    let cursorStyleEl: HTMLStyleElement | null = null;
 
     function escapeHtml(s: any) {
       return String(s ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'} as any)[m]);
@@ -34,7 +54,21 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
         setError('');
         console.log('Carregando XML e descrições...');
         
-        const [xmlResp, descResp] = await Promise.all([ fetch(bpmnUrl), fetch(descriptionsUrl) ]);
+        const xmlResp = await fetch(bpmnUrl);
+        const descResp = await fetch(descriptionsUrl);
+        
+        // Buscar content de forma silenciosa (sem mostrar erro 404)
+        let contentResp = null;
+        if (contentUrl) {
+          try {
+            contentResp = await fetch(contentUrl);
+            if (!contentResp.ok) {
+              contentResp = null; // Silenciar erro 404
+            }
+          } catch (e) {
+            contentResp = null; // Silenciar qualquer erro de rede
+          }
+        }
         
         if (!xmlResp.ok) {
           throw new Error('BPMN não encontrado: ' + bpmnUrl);
@@ -42,6 +76,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
         
         const xml = await xmlResp.text();
         const desc = descResp.ok ? await descResp.json() : {};
+        
+        // Tratar content como opcional - se não existir, usar objeto vazio
+        let content: any = {};
+        if (contentResp && contentResp.ok) {
+          try {
+            content = await contentResp.json();
+          } catch (e) {
+            console.warn('Content não disponível ou inválido, usando dados vazios');
+          }
+        }
         
         console.log('XML carregado, tamanho:', xml.length);
         console.log('Descrições carregadas:', Object.keys(desc).length);
@@ -59,7 +103,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
           });
           
           setViewer(currentViewer);
-          console.log('✅ Viewer criado com sucesso');
+          console.log('[BPMN] Viewer criado com sucesso');
         } else {
           throw new Error('Container não disponível');
         }
@@ -86,6 +130,120 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
           
           overlays = currentViewer.get('overlays');
           eventBus = currentViewer.get('eventBus');
+          canvas = currentViewer.get('canvas');
+          elementRegistry = currentViewer.get('elementRegistry');
+
+          // estilo de cursor/hover/seleção
+          cursorStyleEl = document.createElement('style');
+          cursorStyleEl.innerHTML = `
+            /* Normalizar todas as bordas para espessura padrão */
+            .djs-element .djs-visual > :first-child {
+              stroke-width: 2px !important;
+            }
+            
+            .djs-element:not(.djs-connection) .djs-hit {
+              cursor: pointer !important;
+              stroke: transparent;
+              stroke-width: 100px;
+              fill: transparent;
+              fill-opacity: 0;
+              pointer-events: all !important;
+            }
+            .djs-element.djs-hover .djs-visual > * { filter: none; }
+            
+            /* Seleção com fundo e borda alaranjada */
+            .bpmn-selected .djs-visual > :first-child { 
+              stroke: #f97316 !important;
+              stroke-width: 3px !important;
+              fill: #fed7aa !important; /* tom alaranjado claro */
+            }
+            
+            /* Texto laranja mais escuro quando selecionado (sem negrito) */
+            .bpmn-selected .djs-visual > text {
+              fill: #c2410c !important; /* laranja mais escuro para contraste */
+              stroke: none !important;
+              font-weight: normal !important;
+            }
+            
+            .bpmn-selected .djs-visual > .djs-label {
+              fill: #c2410c !important;
+              font-weight: normal !important;
+            }
+            
+            .bpmn-selected .djs-visual > [class*="bpmn-icon"] { 
+              stroke: none !important;
+              filter: none !important;
+              fill: #c2410c !important; /* ícones também em laranja escuro */
+            }
+            
+            /* Ajustar texto em tarefas para não sobrepor ícones */
+            .djs-element .djs-visual text {
+              font-size: 11px !important;
+              font-weight: 400 !important;
+            }
+            /* Forçar peso normal em todo texto/label/tspan, inclusive herdados do Bizagi */
+            .djs-element .djs-label,
+            .djs-element .djs-label text,
+            .djs-element .djs-label tspan,
+            .djs-element .djs-visual text,
+            .djs-element .djs-visual tspan,
+            .djs-element text,
+            .djs-element tspan,
+            .djs-element text[font-weight],
+            .djs-element tspan[font-weight],
+            .djs-element text[style*="font-weight"],
+            .djs-element tspan[style*="font-weight"] {
+              font-weight: 400 !important;
+              font-family: inherit !important;
+              font-stretch: normal !important;
+              font-style: normal !important;
+              font-variation-settings: "wght" 400 !important;
+              stroke: none !important;
+            }
+            
+            /* Deslocar texto para baixo em tarefas com ícones para dar espaço */
+            .djs-element[class*="userTask"] .djs-visual text,
+            .djs-element[class*="manualTask"] .djs-visual text,
+            .djs-element[class*="scriptTask"] .djs-visual text,
+            .djs-element[class*="serviceTask"] .djs-visual text,
+            .djs-element[class*="businessRuleTask"] .djs-visual text,
+            .djs-element[class*="sendTask"] .djs-visual text,
+            .djs-element[class*="receiveTask"] .djs-visual text {
+              transform: translate(0, 10px);
+            }
+            
+            .tooltip {
+              background: rgba(255,255,255,0.95);
+              border: 2px solid #f97316;
+              border-radius: 6px;
+              padding: 8px 12px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              max-width: 300px;
+              pointer-events: none;
+              z-index: 1000;
+            }
+            .tooltip .title {
+              font-weight: 500;
+              color: #f97316;
+              font-size: 14px;
+              margin-bottom: 4px;
+            }
+            .tooltip .meta {
+              font-size: 11px;
+              color: #666;
+              margin-bottom: 4px;
+            }
+            .tooltip div:last-child {
+              font-size: 12px;
+              color: #333;
+            }
+            
+            /* Remover watermark bpmn.io */
+            .bjs-powered-by {
+              display: none !important;
+            }
+          `;
+          document.head.appendChild(cursorStyleEl);
 
           const flat: any = Array.isArray(desc) ? {} : (desc.elements ? desc.elements : (() => {
             const map: any = {};
@@ -100,17 +258,164 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
           })());
 
           console.log('Configurando eventos...');
+          const contentById: Record<string, any> = (() => {
+            if (content && content.elements) return content.elements;
+            return {};
+          })();
+
           eventBus.on('element.hover', 100, function(e: any) {
             const id = e.element.id;
             const info = flat[id];
             if (info && (info.description || info.name)) {
               const html = document.createElement('div');
               html.className = 'tooltip';
+              html.style.pointerEvents = 'none';
               html.innerHTML = `<div class="title">${escapeHtml(info.name || id)}</div>
                 <div class="meta">${escapeHtml(info.file || '')}${info.processName ? ' • ' + escapeHtml(info.processName) : ''}</div>
                 <div>${escapeHtml(info.description || '')}</div>`;
               if (active[id]) overlays.remove(active[id]);
-              active[id] = overlays.add(id, { position: { top: -10, left: 0 }, html });
+              active[id] = overlays.add(id, { position: { bottom: 10, left: 0 }, html });
+            }
+          });
+
+          let clickCount = 0;
+          let clickTimer: any = null;
+
+          eventBus.on('element.click', 100, function(e: any) {
+            const id = e.element.id;
+            const element = e.element;
+            clickCount++;
+
+            if (clickCount === 1) {
+              clickTimer = setTimeout(() => {
+                // Clique único
+                const details = contentById[id];
+                const fallback = flat[id];
+                const businessObject = element.businessObject;
+                
+                // Sempre cria um objeto, mesmo que vazio
+                const merged = details
+                  ? { id, ...details }
+                  : (fallback ? { 
+                      id,
+                      nome: fallback.name || id,
+                      observacoes: fallback.description ? [fallback.description] : [],
+                      arquivo: fallback.file,
+                      processo: fallback.processName
+                    } : {
+                      id,
+                      nome: businessObject?.name || element.type || id,
+                      tipo: element.type,
+                      ator: '',
+                      entradas: [],
+                      saidas: [],
+                      ferramentas: [],
+                      passoAPasso: [],
+                      popItReferencia: [],
+                      observacoes: []
+                    });
+                
+                // Aplicar edições locais se existirem (ler direto do localStorage)
+                let finalData = merged;
+                try {
+                  const storageKey = `bpmn_edits_${bpmnUrl}`;
+                  const stored = localStorage.getItem(storageKey);
+                  if (stored) {
+                    const edits = JSON.parse(stored);
+                    if (edits[id]) {
+                      finalData = { ...merged, ...edits[id] };
+                      console.log('[Edição] Carregadas edições salvas para', id, edits[id]);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Erro ao carregar edições do localStorage:', e);
+                }
+                
+                setSelected(finalData);
+                setSelectedId(id);
+                setIsEditing(false);
+                setShowModal(false);
+
+                try {
+                  if (selectionMarker) {
+                    canvas.removeMarker(selectionMarker, 'bpmn-selected');
+                  }
+                  canvas.addMarker(id, 'bpmn-selected');
+                  selectionMarker = id;
+                } catch (selErr) {
+                  console.warn('Falha ao aplicar marcador de seleção', selErr);
+                }
+                
+                clickCount = 0;
+              }, 250);
+            } else if (clickCount === 2) {
+              // Duplo clique - abrir modal
+              clearTimeout(clickTimer);
+              console.log('[Click] Duplo clique detectado! Abrindo modal para:', id);
+              const details = contentById[id];
+              const fallback = flat[id];
+              const businessObject = element.businessObject;
+              
+              // Sempre cria um objeto, mesmo que vazio
+              const merged = details
+                ? { id, ...details }
+                : (fallback ? { 
+                    id,
+                    nome: fallback.name || id,
+                    observacoes: fallback.description ? [fallback.description] : [],
+                    arquivo: fallback.file,
+                    processo: fallback.processName
+                  } : {
+                    id,
+                    nome: businessObject?.name || element.type || id,
+                    tipo: element.type,
+                    ator: '',
+                    entradas: [],
+                    saidas: [],
+                    ferramentas: [],
+                    passoAPasso: [],
+                    popItReferencia: [],
+                    observacoes: []
+                  });
+              
+              // Aplicar edições locais se existirem (ler direto do localStorage)
+              let finalData = merged;
+              try {
+                const storageKey = `bpmn_edits_${bpmnUrl}`;
+                const stored = localStorage.getItem(storageKey);
+                if (stored) {
+                  const edits = JSON.parse(stored);
+                  if (edits[id]) {
+                    finalData = { ...merged, ...edits[id] };
+                  }
+                }
+              } catch (e) {
+                console.warn('Erro ao carregar edições do localStorage:', e);
+              }
+              
+              setSelected(finalData);
+              setSelectedId(id);
+              setShowModal(true);
+              console.log('[Modal] Aberto! showModal =', true, 'selected =', finalData.nome);
+              clickCount = 0;
+            }
+          });
+
+          // rótulos de data store (usa nome do dataStoreRef ou próprio nome)
+          elementRegistry.getAll().forEach((el: any) => {
+            if (el.type === 'bpmn:DataStoreReference') {
+              const bo = el.businessObject || {};
+              const refName = bo.dataStoreRef?.name || bo.name || flat[el.id]?.name;
+              if (refName) {
+                try {
+                  overlays.add(el, {
+                    position: { bottom: -10, left: -6 },
+                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid #d4d4d4;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:#111;pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);">${escapeHtml(refName)}</span>`
+                  });
+                } catch (ovErr) {
+                  console.warn('Falha ao adicionar label de data store', el.id, ovErr);
+                }
+              }
             }
           });
 
@@ -208,7 +513,107 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
         console.error('Erro ao destruir viewer:', e);
       }
     };
-  }, [bpmnUrl, descriptionsUrl]); // Removido 'viewer' das dependências
+  }, [bpmnUrl, descriptionsUrl, contentUrl]); // localEdits removido para não recarregar o diagrama
+
+  // Funções de edição
+  const handleStartEdit = () => {
+    // Garantir que todos os campos de array existam
+    const initialData = selected ? { 
+      ...selected,
+      entradas: selected.entradas || [],
+      saidas: selected.saidas || [],
+      ferramentas: selected.ferramentas || [],
+      passoAPasso: selected.passoAPasso || [],
+      popItReferencia: selected.popItReferencia || [],
+      observacoes: selected.observacoes || []
+    } : {
+      entradas: [],
+      saidas: [],
+      ferramentas: [],
+      passoAPasso: [],
+      popItReferencia: [],
+      observacoes: []
+    };
+    console.log('Iniciando edição com dados:', initialData);
+    setEditedData(initialData);
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedData(null);
+  };
+
+  const handleSaveEdit = () => {
+    console.log('Salvando edição...', { selectedId, editedData });
+    
+    if (selectedId && editedData) {
+      setLocalEdits((prev: any) => {
+        const newEdits = { ...prev, [selectedId]: editedData };
+        
+        // Salvar no localStorage com o valor mais recente
+        try {
+          const storageKey = `bpmn_edits_${bpmnUrl}`;
+          localStorage.setItem(storageKey, JSON.stringify(newEdits));
+          console.log('[Storage] Dados salvos com sucesso no localStorage:', newEdits);
+        } catch (e) {
+          console.error('[Storage] Erro ao salvar edições no localStorage:', e);
+        }
+        
+        return newEdits;
+      });
+      
+      setSelected(editedData);
+      setIsEditing(false);
+      setEditedData(null);
+    } else {
+      console.warn('[Erro] Não foi possível salvar: selectedId ou editedData ausentes');
+    }
+  };
+
+  const handleFieldChange = (field: string, value: any) => {
+    console.log('Campo alterado:', field, value);
+    setEditedData((prev: any) => ({ ...prev, [field]: value }));
+  };
+
+  const handleArrayFieldChange = (field: string, index: number, value: string) => {
+    console.log('Array campo alterado:', field, index, value);
+    setEditedData((prev: any) => {
+      const array = [...(prev[field] || [])];
+      array[index] = value;
+      const newData = { ...prev, [field]: array };
+      console.log('Novo editedData após alteração:', newData);
+      return newData;
+    });
+  };
+
+  const handleArrayFieldAdd = (field: string) => {
+    setEditedData((prev: any) => ({
+      ...prev,
+      [field]: [...(prev[field] || []), '']
+    }));
+  };
+
+  const handleArrayFieldRemove = (field: string, index: number) => {
+    setEditedData((prev: any) => {
+      const array = [...(prev[field] || [])];
+      array.splice(index, 1);
+      return { ...prev, [field]: array };
+    });
+  };
+
+  // Carregar edições do localStorage ao montar
+  React.useEffect(() => {
+    try {
+      const storageKey = `bpmn_edits_${bpmnUrl}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        setLocalEdits(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar edições do localStorage:', e);
+    }
+  }, [bpmnUrl]);
 
   if (error) {
     return (
@@ -227,27 +632,418 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl }: { bpmnUrl: stri
 
   return (
     <div className="w-full">
-      {/* Container do Diagrama */}
-      <div 
-        ref={ref} 
-        className="w-full bg-white rounded-lg border border-gray-200 overflow-hidden"
-        style={{ 
-          height: '80vh',
-          minHeight: '700px',
-          position: 'relative',
-          backgroundColor: '#ffffff'
-        }} 
-      />
-      
-      {/* Indicador de status */}
-      <div className="mt-2 text-xs text-gray-500 text-center">
-        <p>Status: {viewer ? 'Diagrama carregado' : 'Carregando...'}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Container do Diagrama */}
+        <div className="lg:col-span-2">
+          <div 
+            ref={ref} 
+            className="w-full bg-white rounded-lg border border-gray-200 overflow-hidden"
+            style={{ 
+              height: '80vh',
+              minHeight: '700px',
+              position: 'relative',
+              backgroundColor: '#ffffff'
+            }} 
+          />
+          
+          {/* Indicador de status */}
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            <p>Status: {viewer ? 'Diagrama carregado' : 'Carregando...'}</p>
+          </div>
+          
+          {/* Instruções */}
+          <div className="mt-3 text-xs text-gray-500 text-center">
+            <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
+          </div>
+        </div>
+
+        {/* Painel lateral */}
+        <div className="lg:col-span-1">
+          <div className="h-full min-h-[300px] bg-white border border-gray-200 rounded-lg p-4 shadow-sm overflow-y-auto max-h-[80vh]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-normal text-gray-900">Detalhes da atividade</h3>
+              {selected && !isEditing && (
+                <button
+                  onClick={handleStartEdit}
+                  className="px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Editar
+                </button>
+              )}
+              {isEditing && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveEdit}
+                    className="px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                  >
+                    Salvar
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-4 py-1.5 text-sm font-medium bg-white text-gray-700 border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {!contentUrl && (
+              <p className="text-sm text-gray-500">Nenhum conteúdo detalhado configurado.</p>
+            )}
+            {contentUrl && !selected && (
+              <p className="text-sm text-gray-500">Clique em uma tarefa do diagrama para ver os detalhes. Clique duas vezes para abrir o popup.</p>
+            )}
+            {contentUrl && selected && !isEditing && (
+              <div className="space-y-3" style={{ fontWeight: 'normal' }}>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Nome</p>
+                  <p className="text-base text-gray-900" style={{ fontWeight: 400 }}>{selected.nome || selected.id}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Ator</p>
+                  <p className="text-sm text-gray-800" style={{ fontWeight: 400 }}>{selected.ator || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Entradas</p>
+                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.entradas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma entrada cadastrada</li>
+                    ) : (
+                      (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Saídas</p>
+                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.saidas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma saída cadastrada</li>
+                    ) : (
+                      (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Ferramentas</p>
+                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.ferramentas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
+                    ) : (
+                      (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Passo a passo</p>
+                  <ol className="text-sm text-gray-800 list-decimal list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.passoAPasso || []).length === 0 ? (
+                      <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
+                    ) : (
+                      (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ol>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>POP / IT</p>
+                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.popItReferencia || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma referência cadastrada</li>
+                    ) : (
+                      (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Observações</p>
+                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
+                    {(selected.observacoes || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma observação cadastrada</li>
+                    ) : (
+                      (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
+            {contentUrl && isEditing && editedData && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Nome</label>
+                  <input
+                    type="text"
+                    value={editedData.nome || ''}
+                    onChange={(e) => handleFieldChange('nome', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Ator</label>
+                  <input
+                    type="text"
+                    value={editedData.ator || ''}
+                    onChange={(e) => handleFieldChange('ator', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Entradas</label>
+                  {(editedData.entradas || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('entradas', idx, e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('entradas', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('entradas')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar entrada
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Saídas</label>
+                  {(editedData.saidas || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('saidas', idx, e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('saidas', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('saidas')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar saída
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Ferramentas</label>
+                  {(editedData.ferramentas || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('ferramentas', idx, e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('ferramentas', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('ferramentas')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar ferramenta
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Passo a passo</label>
+                  {(editedData.passoAPasso || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <span className="text-sm text-gray-600 mt-2">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('passoAPasso', idx, e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('passoAPasso', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('passoAPasso')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar passo
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">POP / IT</label>
+                  {(editedData.popItReferencia || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('popItReferencia', idx, e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('popItReferencia', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('popItReferencia')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar referência
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Observações</label>
+                  {(editedData.observacoes || []).map((item: string, idx: number) => (
+                    <div key={idx} className="flex gap-2 mb-2">
+                      <textarea
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('observacoes', idx, e.target.value)}
+                        rows={2}
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <button
+                        onClick={() => handleArrayFieldRemove('observacoes', idx)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
+                        title="Remover"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => handleArrayFieldAdd('observacoes')}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                  >
+                    + Adicionar observação
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-      
-      {/* Instruções */}
-      <div className="mt-3 text-xs text-gray-500 text-center">
-        <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
-      </div>
+
+      {/* Modal de detalhes (duplo clique) - Arrastável e Não-bloqueante */}
+      {showModal && selected && (
+        <div className="fixed inset-0 pointer-events-none z-50 flex items-start justify-center p-4" style={{ paddingTop: '80px' }}>
+          <Draggable handle=".drag-handle" defaultPosition={{ x: 0, y: 0 }}>
+            <div className="bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto" style={{ width: '800px', maxHeight: 'calc(90vh - 80px)' }}>
+              <div className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 bg-gradient-to-r from-orange-400 to-orange-500 text-white cursor-move">
+                <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
+                  title="Fechar"
+                >
+                  ×
+                </button>
+              </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ator</h3>
+                  <p className="text-base text-gray-900">{selected.ator || '-'}</p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Entradas</h3>
+                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                    {(selected.entradas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma entrada cadastrada</li>
+                    ) : (
+                      (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Saídas</h3>
+                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                    {(selected.saidas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma saída cadastrada</li>
+                    ) : (
+                      (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ferramentas</h3>
+                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                    {(selected.ferramentas || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
+                    ) : (
+                      (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Passo a passo</h3>
+                  <ol className="text-base text-gray-900 list-decimal list-inside space-y-1">
+                    {(selected.passoAPasso || []).length === 0 ? (
+                      <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
+                    ) : (
+                      (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ol>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">POP / IT</h3>
+                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                    {(selected.popItReferencia || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma referência cadastrada</li>
+                    ) : (
+                      (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
+                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                    {(selected.observacoes || []).length === 0 ? (
+                      <li className="text-gray-400">Nenhuma observação cadastrada</li>
+                    ) : (
+                      (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-6 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+          </Draggable>
+        </div>
+      )}
     </div>
   );
 }

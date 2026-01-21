@@ -1,77 +1,105 @@
+import { existsSync, readdirSync, statSync } from 'fs'
+import { join, relative } from 'path'
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { Header, Footer } from '@/components'
-import BpmnViewer from '@/components/BpmnViewer'
+import ProcessoPageClient from './ProcessoPageClient'
 
-const processos = {
-  'comercial-v2': {
-    nome: 'Comercial v2.0',
-    descricao: 'Processo Comercial (Funil de Vendas)',
-    arquivo: 'Comercial v2.0.bpmn',
-    bpmnUrl: '/api/bpmn/comercial',
-    descriptionsUrl: '/api/descriptions'
-  },
-  'comissao-vendas': {
-    nome: 'Subprocesso Comissão Vendas',
-    descricao: 'Processo de comissões para vendas',
-    arquivo: 'subprocesso Comissão Vendas v1.0.bpmn',
-    bpmnUrl: '/api/bpmn/comissao-vendas',
-    descriptionsUrl: '/api/descriptions'
+type ProcessoInfo = {
+  slug: string
+  nome: string
+  file: string
+  arquivo: string
+  categoria: string
+  bpmnUrl: string
+  descriptionsUrl: string
+  contentUrl: string
+}
+
+function normalizeSlug(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/ç/g, 'c')
+    .replace(/Ç/g, 'C')
+    .replace(/\s+/g, '-')
+    .replace(/\//g, '-')
+    .toLowerCase()
+}
+
+function getAllBpmnFiles(dir: string, baseDir: string, fileList: Array<{ path: string, name: string }> = []): Array<{ path: string, name: string }> {
+  const files = readdirSync(dir)
+  
+  files.forEach(file => {
+    const filePath = join(dir, file)
+    const stat = statSync(filePath)
+    
+    if (stat.isDirectory()) {
+      getAllBpmnFiles(filePath, baseDir, fileList)
+    } else if (file.toLowerCase().endsWith('.bpmn')) {
+      const relativePath = relative(baseDir, filePath).replace(/\\/g, '/')
+      fileList.push({
+        path: relativePath,
+        name: file
+      })
+    }
+  })
+  
+  return fileList
+}
+
+function toProcessoInfo(match: { path: string, name: string }, slug: string): ProcessoInfo {
+  const pathParts = match.path.split('/')
+  const categoria = pathParts.length > 1 ? pathParts[0] : 'Raiz'
+
+  return {
+    slug: normalizeSlug(match.path.replace(/\.bpmn$/i, '')),
+    nome: match.name.replace(/\.bpmn$/i, ''),
+    file: match.path,
+    arquivo: match.path,
+    categoria,
+    bpmnUrl: `/api/bpmn/${encodeURIComponent(slug)}`,
+    descriptionsUrl: '/api/descriptions',
+    contentUrl: `/api/content/${encodeURIComponent(slug)}`
+  }
+}
+
+function findProcesso(slug: string): { atual: ProcessoInfo, outros: ProcessoInfo[] } | null {
+  const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
+
+  if (!existsSync(bpmnDir)) {
+    return null
+  }
+
+  const files = getAllBpmnFiles(bpmnDir, bpmnDir)
+
+  const match = files.find(({ path }) => {
+    const fileSlug = normalizeSlug(path.replace(/\.bpmn$/i, ''))
+    return fileSlug === normalizeSlug(decodeURIComponent(slug))
+  })
+
+  if (!match) {
+    return null
+  }
+
+  const caminhoPasta = match.path.includes('/') ? match.path.split('/')[0] : null
+  const outros = files
+    .filter(({ path }) => path !== match.path)
+    .filter(({ path }) => caminhoPasta ? path.startsWith(`${caminhoPasta}/`) : false)
+    .map((f) => toProcessoInfo(f, f.path.replace(/\.bpmn$/i, '')))
+
+  return {
+    atual: toProcessoInfo(match, slug),
+    outros
   }
 }
 
 export default function ProcessoPage({ params }: { params: { slug: string } }) {
-  const processo = processos[params.slug as keyof typeof processos]
+  const resultado = findProcesso(params.slug)
 
-  if (!processo) {
+  if (!resultado) {
     notFound()
   }
 
-  return (
-    <>
-      <Header />
-      <main className="pt-20 min-h-screen bg-gray-50">
-        <div className="container py-16">
-          <div className="mb-8">
-            <Link 
-              href="/processos"
-              className="inline-flex items-center text-orange-500 hover:text-orange-600 font-semibold mb-4"
-            >
-              ← Voltar aos Processos
-            </Link>
-            
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-              {processo.nome}
-            </h1>
-            <p className="text-xl text-gray-600 mb-8">
-              {processo.descricao}
-            </p>
-            <div className="text-sm text-gray-500">
-              Arquivo: {processo.arquivo}
-            </div>
-          </div>
+  const { atual: processo, outros } = resultado
 
-          <div className="bg-white rounded-xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              Visualização do Processo
-            </h2>
-            <BpmnViewer 
-              bpmnUrl={processo.bpmnUrl}
-              descriptionsUrl={processo.descriptionsUrl}
-            />
-          </div>
-
-          <div className="text-center mt-12">
-            <Link 
-              href="/"
-              className="inline-block bg-gray-600 hover:bg-gray-700 text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300"
-            >
-              Voltar ao Início
-            </Link>
-          </div>
-        </div>
-      </main>
-      <Footer />
-    </>
-  )
+  return <ProcessoPageClient processo={processo} outros={outros} />
 }

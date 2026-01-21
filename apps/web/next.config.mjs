@@ -4,11 +4,9 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
   },
-  // Proxies para API local durante dev
-  async rewrites() {
-    return [
-      { source: '/api/:path*', destination: 'http://localhost:4000/api/:path*' }
-    ];
-  }
+  // Otimizações para produção
+  compress: true,
+  poweredByHeader: false,
 };
+
 export default nextConfig;

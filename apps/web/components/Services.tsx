@@ -1,17 +1,19 @@
+import { Code, Cloud, BarChart3 } from 'lucide-react'
+
 export default function Services() {
   const services = [
     {
-      icon: "💻",
+      icon: Code,
       title: "Desenvolvimento de Software",
       description: "Criamos soluções de software sob medida, desde aplicativos móveis a sistemas empresariais complexos."
     },
     {
-      icon: "☁️",
+      icon: Cloud,
       title: "Soluções em Nuvem",
       description: "Otimizamos sua infraestrutura com serviços em nuvem, garantindo escalabilidade, segurança e eficiência."
     },
     {
-      icon: "📊",
+      icon: BarChart3,
       title: "Análise de Dados",
       description: "Transformamos dados brutos em insights valiosos para impulsionar a tomada de decisões estratégicas."
     }
@@ -23,17 +25,22 @@ export default function Services() {
         Nossos Serviços
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {services.map((service, index) => (
-          <div key={index} className="service-card text-center">
-            <div className="text-6xl mb-6">{service.icon}</div>
-            <h3 className="text-xl md:text-2xl font-semibold mb-4 text-gray-900">
-              {service.title}
-            </h3>
-            <p className="text-gray-600 leading-relaxed">
-              {service.description}
-            </p>
-          </div>
-        ))}
+        {services.map((service, index) => {
+          const IconComponent = service.icon
+          return (
+            <div key={index} className="service-card text-center">
+              <div className="flex justify-center mb-6">
+                <IconComponent className="w-16 h-16 text-orange-500" />
+              </div>
+              <h3 className="text-xl md:text-2xl font-semibold mb-4 text-gray-900">
+                {service.title}
+              </h3>
+              <p className="text-gray-600 leading-relaxed">
+                {service.description}
+              </p>
+            </div>
+          )
+        })}
       </div>
     </section>
   )
