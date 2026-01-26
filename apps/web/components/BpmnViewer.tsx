@@ -8,9 +8,10 @@ type BpmnViewerProps = {
   bpmnUrl: string
   descriptionsUrl: string
   contentUrl?: string
+  documentos?: Record<string, string[]>
 }
 
-export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
+export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl, documentos }: BpmnViewerProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string>('');
@@ -1136,13 +1137,62 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 </div>
                 <div>
                   <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">POP / IT</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.popItReferencia || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma referência cadastrada</li>
+                  
+                  {/* Referências textuais (existentes) */}
+                  {(selected.popItReferencia || []).length > 0 && (
+                    <div className="mb-3">
+                      <h4 className="text-xs font-semibold text-gray-600 mb-1">Referências:</h4>
+                      <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                        {(selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {/* Documentos do GitHub */}
+                  {documentos && selectedId && (() => {
+                    // Normalizar o nome da atividade para buscar documentos
+                    const activityName = selected.nome || selectedId;
+                    const normalizedName = activityName
+                      .toLowerCase()
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/\s+/g, '-')
+                      .replace(/[^\w-]/g, '');
+                    
+                    // Buscar documentos pela chave exata ou normalizada
+                    const docs = documentos[normalizedName] || documentos[activityName] || [];
+                    
+                    return docs.length > 0 ? (
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-600 mb-2">📎 Documentos Disponíveis:</h4>
+                        <div className="space-y-2">
+                          {docs.map((doc: string, idx: number) => {
+                            const downloadUrl = `/api/github-download/${bpmnUrl.split('/')[3]}/pop-it/${normalizedName}/${doc}`;
+                            return (
+                              <a
+                                key={idx}
+                                href={downloadUrl}
+                                download
+                                className="flex items-center gap-2 px-3 py-2 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors group"
+                              >
+                                <span className="text-orange-600">📄</span>
+                                <span className="text-sm text-gray-800 group-hover:text-orange-700 font-medium flex-1">
+                                  {doc}
+                                </span>
+                                <span className="text-xs text-orange-500 group-hover:text-orange-600">
+                                  ⬇ Download
+                                </span>
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
                     ) : (
-                      (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
+                      (selected.popItReferencia || []).length === 0 && (
+                        <p className="text-gray-400 text-sm">Nenhum documento disponível</p>
+                      )
+                    );
+                  })()}
                 </div>
                 <div>
                   <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
