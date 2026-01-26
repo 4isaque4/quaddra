@@ -1,5 +1,5 @@
 {
-  "/page": "app/page.js",
   "/processos/page": "app/processos/page.js",
+  "/api/sync-github/route": "app/api/sync-github/route.js",
   "/processos/[slug]/page": "app/processos/[slug]/page.js"
 }
