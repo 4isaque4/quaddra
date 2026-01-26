@@ -1,0 +1,80 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build application
+        run: |
+          cd apps/web
+          npm run build
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          script: |
+            echo "🚀 Iniciando deploy..."
+            
+            # Navegar para o diretório do projeto
+            cd /var/www/quaddra
+            
+            # Fazer backup rápido do .env (se existir)
+            if [ -f apps/web/.env.local ]; then
+              cp apps/web/.env.local /tmp/.env.local.backup
+            fi
+            
+            # Atualizar código do repositório
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Restaurar .env (se existir backup)
+            if [ -f /tmp/.env.local.backup ]; then
+              cp /tmp/.env.local.backup apps/web/.env.local
+            fi
+            
+            # Instalar dependências
+            npm install
+            
+            # Build da aplicação
+            cd apps/web
+            npm run build
+            cd ../..
+            
+            # Reiniciar aplicação com PM2
+            pm2 restart quaddra-web || pm2 start apps/web/ecosystem.config.js
+            pm2 save
+            
+            echo "✅ Deploy concluído com sucesso!"
+            pm2 status
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Deploy realizado com sucesso!"
+          else
+            echo "❌ Deploy falhou!"
+          fi

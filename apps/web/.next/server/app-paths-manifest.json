@@ -1,6 +1,4 @@
 {
-  "/page": "app/page.js",
   "/processos/[slug]/page": "app/processos/[slug]/page.js",
-  "/api/documents/[slug]/route": "app/api/documents/[slug]/route.js",
-  "/processos/page": "app/processos/page.js"
+  "/api/content/[slug]/route": "app/api/content/[slug]/route.js"
 }

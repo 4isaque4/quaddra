@@ -31,11 +31,10 @@ declare namespace __next_route_internal_types__ {
   type StaticRoutes = 
     | `/`
     | `/api/descriptions`
-    | `/api/processes`
     | `/processos`
   type DynamicRoutes<T extends string = string> = 
-    | `/api/bpmn/${SafeSlug<T>}`
     | `/api/content/${SafeSlug<T>}`
+    | `/api/bpmn/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}/download/${SafeSlug<T>}`
     | `/processos/${SafeSlug<T>}`

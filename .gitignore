@@ -1,25 +1,68 @@
-node_modules
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
 
-# Arquivos de deploy gerados
-deploy-files/
-deploy-static/
-quaddra-deploy.zip
-quaddra-deploy-static.zip
+# Testing
+coverage/
 
-# Build artifacts
+# Production build
 apps/web/.next/
 apps/web/out/
 apps/api/dist/
+dist/
+build/
 
-# Environment files
+# Environment files (NUNCA commitar senhas!)
 .env
 .env.local
 .env.production
 .env.development
+.env*.local
 
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 pm2.log
+logs/
+
+# Cache files
+.turbo
+.next/
+.cache/
+*.pack.gz
+*.pack.gz.old
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Scripts de deploy locais (usar GitHub Actions)
+deploy-*.ps1
+deploy-*.sh
+*.ps1
+*.sh
+
+# Documentação temporária
+DEPLOY*.md
+PASSOS*.md
+GUIA*.md
+
+# Arquivos de deploy gerados
+deploy-files/
+deploy-static/
+*.zip
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Uploads temporários (se houver)
+uploads/temp/

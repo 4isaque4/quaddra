@@ -52,6 +52,7 @@ export default function ProcessSettingsModal({
       // Carregar documentos
       loadDocuments();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, processSlug, originalFileName]);
 
   const loadDocuments = async () => {
