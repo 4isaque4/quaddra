@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import BpmnJS from 'bpmn-js/dist/bpmn-navigated-viewer.development.js';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
-import Draggable from 'react-draggable';
 
 type BpmnViewerProps = {
   bpmnUrl: string
@@ -21,6 +20,13 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [editedData, setEditedData] = useState<any>(null);
   const [showModal, setShowModal] = useState<boolean>(false);
   const [localEdits, setLocalEdits] = useState<Record<string, any>>({});
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [modalDimensions, setModalDimensions] = useState({ width: 1000, height: 700 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeDirection, setResizeDirection] = useState<string>('');
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Debug: Log quando showModal muda
   useEffect(() => {
@@ -396,6 +402,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               setSelected(finalData);
               setSelectedId(id);
               setShowModal(true);
+              setModalDimensions({ width: 800, height: 600 });
+              // Centralizar na tela
+              setModalPosition({ 
+                x: (window.innerWidth - 800) / 2, 
+                y: (window.innerHeight - 600) / 2 
+              });
               console.log('[Modal] Aberto! showModal =', true, 'selected =', finalData.nome);
               clickCount = 0;
             }
@@ -614,6 +626,87 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       console.warn('Erro ao carregar edições do localStorage:', e);
     }
   }, [bpmnUrl]);
+
+  // Listener global para parar arrastar/redimensionar quando soltar o mouse
+  React.useEffect(() => {
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setIsDragging(false);
+      setResizeDirection('');
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizing) {
+        const deltaX = e.clientX - resizeStart.x;
+        const deltaY = e.clientY - resizeStart.y;
+        
+        let newWidth = resizeStart.width;
+        let newHeight = resizeStart.height;
+        let newX = resizeStart.posX;
+        let newY = resizeStart.posY;
+
+        // Redimensionar baseado na direção
+        switch (resizeDirection) {
+          case 'e': // Direita
+            newWidth = Math.max(400, resizeStart.width + deltaX);
+            break;
+          case 'w': // Esquerda
+            newWidth = Math.max(400, resizeStart.width - deltaX);
+            newX = resizeStart.posX + (resizeStart.width - newWidth);
+            break;
+          case 's': // Baixo
+            newHeight = Math.max(300, resizeStart.height + deltaY);
+            break;
+          case 'n': // Cima
+            newHeight = Math.max(300, resizeStart.height - deltaY);
+            newY = resizeStart.posY + (resizeStart.height - newHeight);
+            break;
+          case 'se': // Sudeste
+            newWidth = Math.max(400, resizeStart.width + deltaX);
+            newHeight = Math.max(300, resizeStart.height + deltaY);
+            break;
+          case 'sw': // Sudoeste
+            newWidth = Math.max(400, resizeStart.width - deltaX);
+            newHeight = Math.max(300, resizeStart.height + deltaY);
+            newX = resizeStart.posX + (resizeStart.width - newWidth);
+            break;
+          case 'ne': // Nordeste
+            newWidth = Math.max(400, resizeStart.width + deltaX);
+            newHeight = Math.max(300, resizeStart.height - deltaY);
+            newY = resizeStart.posY + (resizeStart.height - newHeight);
+            break;
+          case 'nw': // Noroeste
+            newWidth = Math.max(400, resizeStart.width - deltaX);
+            newHeight = Math.max(300, resizeStart.height - deltaY);
+            newX = resizeStart.posX + (resizeStart.width - newWidth);
+            newY = resizeStart.posY + (resizeStart.height - newHeight);
+            break;
+        }
+
+        // Limitar ao viewport
+        if (newWidth > window.innerWidth - 20) newWidth = window.innerWidth - 20;
+        if (newHeight > window.innerHeight - 20) newHeight = window.innerHeight - 20;
+        if (newX < 0) { newWidth += newX; newX = 0; }
+        if (newY < 0) { newHeight += newY; newY = 0; }
+
+        setModalDimensions({ width: newWidth, height: newHeight });
+        setModalPosition({ x: newX, y: newY });
+      } else if (isDragging) {
+        const newX = Math.max(0, Math.min(window.innerWidth - modalDimensions.width, e.clientX - dragStart.x));
+        const newY = Math.max(0, Math.min(window.innerHeight - modalDimensions.height, e.clientY - dragStart.y));
+        setModalPosition({ x: newX, y: newY });
+      }
+    };
+
+    if (isDragging || isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, isResizing, resizeDirection, resizeStart, dragStart, modalDimensions]);
 
   if (error) {
     return (
@@ -949,21 +1042,52 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         </div>
       </div>
 
-      {/* Modal de detalhes (duplo clique) - Arrastável e Não-bloqueante */}
+      {/* Modal de detalhes (duplo clique) - Arrastável e Redimensionável */}
       {showModal && selected && (
-        <div className="fixed inset-0 pointer-events-none z-50 flex items-start justify-center p-4" style={{ paddingTop: '80px' }}>
-          <Draggable handle=".drag-handle" defaultPosition={{ x: 0, y: 0 }}>
-            <div className="bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto" style={{ width: '800px', maxHeight: 'calc(90vh - 80px)' }}>
-              <div className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 bg-gradient-to-r from-orange-400 to-orange-500 text-white cursor-move">
-                <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
-                  title="Fechar"
-                >
-                  ×
-                </button>
-              </div>
+        <div 
+            className="fixed z-50 bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
+            style={{ 
+              left: `${modalPosition.x}px`,
+              top: `${modalPosition.y}px`,
+              width: `${modalDimensions.width}px`,
+              height: `${modalDimensions.height}px`,
+              minWidth: '400px',
+              minHeight: '300px',
+              maxWidth: '95vw',
+              maxHeight: '95vh'
+            }}
+          >
+            {/* Barra superior - área de arrastar */}
+            <div 
+              className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 bg-gradient-to-r from-orange-400 to-orange-500 text-white cursor-move select-none"
+              onMouseDown={(e) => {
+                // Só arrastar se não estiver clicando em um botão ou handle de redimensionamento
+                const target = e.target as HTMLElement;
+                if (target.closest('button') || target.closest('.resize-handle')) {
+                  return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(true);
+                setDragStart({
+                  x: e.clientX - modalPosition.x,
+                  y: e.clientY - modalPosition.y
+                });
+              }}
+            >
+              <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setModalDimensions({ width: 1000, height: 700 });
+                  setModalPosition({ x: 0, y: 0 });
+                }}
+                className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
+                title="Fechar"
+              >
+                ×
+              </button>
+            </div>
             <div className="p-6 overflow-y-auto flex-1">
               <div className="space-y-4">
                 <div>
@@ -1034,15 +1158,168 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             </div>
             <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setModalDimensions({ width: 800, height: 600 });
+                  setModalPosition({ x: 0, y: 0 });
+                }}
                 className="px-6 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
               >
                 Fechar
               </button>
             </div>
+            
+            {/* Handles de redimensionamento nas bordas - só redimensiona quando clica e arrasta */}
+            {/* Borda superior */}
+            <div
+              className="resize-handle absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false); // Garantir que não está arrastando
+                setResizeDirection('n');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            {/* Borda inferior */}
+            <div
+              className="resize-handle absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('s');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            {/* Borda esquerda */}
+            <div
+              className="resize-handle absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('w');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            {/* Borda direita */}
+            <div
+              className="resize-handle absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('e');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            {/* Cantos */}
+            <div
+              className="resize-handle absolute top-0 left-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('nw');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            <div
+              className="resize-handle absolute top-0 right-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('ne');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            <div
+              className="resize-handle absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('sw');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
+            <div
+              className="resize-handle absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsResizing(true);
+                setIsDragging(false);
+                setResizeDirection('se');
+                setResizeStart({
+                  x: e.clientX,
+                  y: e.clientY,
+                  width: modalDimensions.width,
+                  height: modalDimensions.height,
+                  posX: modalPosition.x,
+                  posY: modalPosition.y
+                });
+              }}
+            />
           </div>
-          </Draggable>
-        </div>
       )}
     </div>
   );
