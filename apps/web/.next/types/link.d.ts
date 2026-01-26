@@ -33,13 +33,14 @@ declare namespace __next_route_internal_types__ {
     | `/api/descriptions`
     | `/api/sync-processos`
     | `/api/rename-file`
+    | `/api/sync-github`
     | `/processos`
   type DynamicRoutes<T extends string = string> = 
     | `/api/bpmn/${SafeSlug<T>}`
     | `/api/content/${SafeSlug<T>}`
+    | `/api/popit/${SafeSlug<T>}/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}/download/${SafeSlug<T>}`
-    | `/api/popit/${SafeSlug<T>}/${SafeSlug<T>}`
     | `/processos/${SafeSlug<T>}`
 
   type RouteImpl<T> = 
