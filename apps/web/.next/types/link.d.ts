@@ -33,10 +33,10 @@ declare namespace __next_route_internal_types__ {
     | `/api/descriptions`
     | `/processos`
   type DynamicRoutes<T extends string = string> = 
-    | `/api/content/${SafeSlug<T>}`
     | `/api/bpmn/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}/download/${SafeSlug<T>}`
+    | `/api/content/${SafeSlug<T>}`
     | `/processos/${SafeSlug<T>}`
 
   type RouteImpl<T> = 
