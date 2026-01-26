@@ -1,8 +1,5 @@
 {
+  "/page": "app/page.js",
   "/processos/page": "app/processos/page.js",
-  "/api/github-processos/route": "app/api/github-processos/route.js",
-  "/api/github-bpmn/[pasta]/[arquivo]/route": "app/api/github-bpmn/[pasta]/[arquivo]/route.js",
-  "/processos/[slug]/page": "app/processos/[slug]/page.js",
-  "/api/content/[slug]/route": "app/api/content/[slug]/route.js",
-  "/api/descriptions/route": "app/api/descriptions/route.js"
+  "/processos/[slug]/page": "app/processos/[slug]/page.js"
 }

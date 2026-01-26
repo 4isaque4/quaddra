@@ -1,51 +1,105 @@
+import { existsSync, readdirSync, statSync } from 'fs'
+import { join, relative } from 'path'
 import { notFound } from 'next/navigation'
-import ProcessoPageClientGitHub from './ProcessoPageClientGitHub'
+import ProcessoPageClient from './ProcessoPageClient'
 
-type ProcessoGitHub = {
+type ProcessoInfo = {
   slug: string
   nome: string
-  pasta: string
+  file: string
   arquivo: string
-  subdiagramas: string[]
-  documentos: Record<string, string[]>
-  bpmnUrl: string
   categoria: string
+  bpmnUrl: string
+  descriptionsUrl: string
+  contentUrl: string
 }
 
-async function getProcessoFromGitHub(slug: string): Promise<ProcessoGitHub | null> {
-  try {
-    // Buscar todos os processos do GitHub
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
-    const response = await fetch(`${baseUrl}/api/github-processos`, {
-      cache: 'no-store', // Sempre buscar dados frescos
-    })
+function normalizeSlug(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/ç/g, 'c')
+    .replace(/Ç/g, 'C')
+    .replace(/\s+/g, '-')
+    .replace(/\//g, '-')
+    .toLowerCase()
+}
 
-    if (!response.ok) {
-      return null
+function getAllBpmnFiles(dir: string, baseDir: string, fileList: Array<{ path: string, name: string }> = []): Array<{ path: string, name: string }> {
+  const files = readdirSync(dir)
+  
+  files.forEach(file => {
+    const filePath = join(dir, file)
+    const stat = statSync(filePath)
+    
+    if (stat.isDirectory()) {
+      getAllBpmnFiles(filePath, baseDir, fileList)
+    } else if (file.toLowerCase().endsWith('.bpmn')) {
+      const relativePath = relative(baseDir, filePath).replace(/\\/g, '/')
+      fileList.push({
+        path: relativePath,
+        name: file
+      })
     }
+  })
+  
+  return fileList
+}
 
-    const data = await response.json()
+function toProcessoInfo(match: { path: string, name: string }, slug: string): ProcessoInfo {
+  const pathParts = match.path.split('/')
+  const categoria = pathParts.length > 1 ? pathParts[0] : 'Raiz'
 
-    if (!data.success || !data.processos) {
-      return null
-    }
-
-    // Encontrar o processo pelo slug
-    const processo = data.processos.find((p: ProcessoGitHub) => p.slug === slug)
-
-    return processo || null
-  } catch (error) {
-    console.error('Erro ao buscar processo do GitHub:', error)
-    return null
+  return {
+    slug: normalizeSlug(match.path.replace(/\.bpmn$/i, '')),
+    nome: match.name.replace(/\.bpmn$/i, ''),
+    file: match.path,
+    arquivo: match.path,
+    categoria,
+    bpmnUrl: `/api/bpmn/${encodeURIComponent(slug)}`,
+    descriptionsUrl: '/api/descriptions',
+    contentUrl: `/api/content/${encodeURIComponent(slug)}`
   }
 }
 
-export default async function ProcessoPage({ params }: { params: { slug: string } }) {
-  const processo = await getProcessoFromGitHub(params.slug)
+function findProcesso(slug: string): { atual: ProcessoInfo, outros: ProcessoInfo[] } | null {
+  const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
 
-  if (!processo) {
+  if (!existsSync(bpmnDir)) {
+    return null
+  }
+
+  const files = getAllBpmnFiles(bpmnDir, bpmnDir)
+
+  const match = files.find(({ path }) => {
+    const fileSlug = normalizeSlug(path.replace(/\.bpmn$/i, ''))
+    return fileSlug === normalizeSlug(decodeURIComponent(slug))
+  })
+
+  if (!match) {
+    return null
+  }
+
+  const caminhoPasta = match.path.includes('/') ? match.path.split('/')[0] : null
+  const outros = files
+    .filter(({ path }) => path !== match.path)
+    .filter(({ path }) => caminhoPasta ? path.startsWith(`${caminhoPasta}/`) : false)
+    .map((f) => toProcessoInfo(f, f.path.replace(/\.bpmn$/i, '')))
+
+  return {
+    atual: toProcessoInfo(match, slug),
+    outros
+  }
+}
+
+export default function ProcessoPage({ params }: { params: { slug: string } }) {
+  const resultado = findProcesso(params.slug)
+
+  if (!resultado) {
     notFound()
   }
 
-  return <ProcessoPageClientGitHub processo={processo} />
+  const { atual: processo, outros } = resultado
+
+  return <ProcessoPageClient processo={processo} outros={outros} />
 }
