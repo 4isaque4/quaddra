@@ -135,8 +135,42 @@ export default function ProcessSettingsModal({
       return;
     }
     
-    // TODO: Implementar API para renomear arquivo físico
-    alert('Funcionalidade de renomear arquivo original será implementada em breve');
+    if (!newFileName.endsWith('.bpmn')) {
+      alert('O nome do arquivo deve terminar com .bpmn');
+      return;
+    }
+
+    const confirmed = confirm('ATENÇÃO: Esta ação irá renomear o arquivo físico no servidor. Tem certeza?');
+    if (!confirmed) return;
+
+    try {
+      // Construir o caminho relativo do arquivo
+      const response = await fetch('/api/rename-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          oldPath: processSlug.replace(/-/g, '/') + '.bpmn', // Converter slug de volta para path
+          newName: newFileName
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Arquivo renomeado com sucesso! A página será recarregada.');
+        
+        // Recarregar página com novo slug
+        const newSlug = data.newPath.replace(/\.bpmn$/i, '').replace(/\//g, '-').toLowerCase();
+        window.location.href = `/processos/${encodeURIComponent(newSlug)}`;
+      } else {
+        alert(`Erro ao renomear arquivo: ${data.error || 'Erro desconhecido'}`);
+      }
+    } catch (error) {
+      console.error('Erro ao renomear arquivo:', error);
+      alert('Erro ao renomear arquivo');
+    }
   };
 
   if (!isOpen) return null;

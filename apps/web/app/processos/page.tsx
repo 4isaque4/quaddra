@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Header, Footer } from '@/components'
-import { FileText } from 'lucide-react'
+import ProcessCard from '@/components/ProcessCard'
 import { readdirSync, existsSync, statSync } from 'fs'
 import { join, relative } from 'path'
 
@@ -122,22 +122,11 @@ export default function ProcessosPage() {
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {grupo.processos.map((processo) => (
-                  <div key={processo.slug} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:transform hover:-translate-y-2">
-                    <div className="p-6">
-                      <div className="flex justify-center mb-3">
-                        <FileText className="w-10 h-10 text-orange-500" />
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900 mb-2 line-clamp-2">
-                        {processo.nome}
-                      </h3>
-                      <Link 
-                        href={`/processos/${processo.slug}`}
-                        className="inline-block w-full text-center bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 mt-4"
-                      >
-                        Visualizar
-                      </Link>
-                    </div>
-                  </div>
+                  <ProcessCard
+                    key={processo.slug}
+                    slug={processo.slug}
+                    nome={processo.nome}
+                  />
                 ))}
               </div>
             </div>
