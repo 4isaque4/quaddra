@@ -63,12 +63,17 @@ jobs:
             npm run build
             cd ../..
             
-            # Reiniciar aplicação com PM2
-            pm2 restart quaddra-web || pm2 start apps/web/ecosystem.config.js
+            # Parar e deletar processo antigo do PM2
+            pm2 stop quaddra-web 2>/dev/null || true
+            pm2 delete quaddra-web 2>/dev/null || true
+            
+            # Iniciar aplicação com PM2 usando o ecosystem.config.js
+            pm2 start apps/web/ecosystem.config.js
             pm2 save
             
             echo "✅ Deploy concluído com sucesso!"
             pm2 status
+            pm2 logs quaddra-web --lines 10 --nostream
 
       - name: Notify deployment status
         if: always()
