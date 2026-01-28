@@ -30,14 +30,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   // Debug: Log quando showModal muda
   useEffect(() => {
-    console.log('[Modal] showModal alterado para:', showModal);
+    // console.log('[Modal] showModal alterado para:', showModal);
   }, [showModal]);
 
   useEffect(() => {
     if (!ref.current) return;
-    
-    console.log('Iniciando BpmnViewer...');
-    console.log('URLs:', { bpmnUrl, descriptionsUrl });
     
     let overlays: any, eventBus: any, canvas: any, elementRegistry: any;
     let active: Record<string, any> = {};
@@ -53,12 +50,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       try {
         // Verificar se o componente ainda está montado
         if (!ref.current) {
-          console.log('Componente desmontado, abortando carregamento');
           return;
         }
         
         setError('');
-        console.log('Carregando XML e descrições...');
         
         const xmlResp = await fetch(bpmnUrl);
         const descResp = await fetch(descriptionsUrl);
@@ -93,23 +88,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           }
         }
         
-        console.log('XML carregado, tamanho:', xml.length);
-        console.log('Descrições carregadas:', Object.keys(desc).length);
-        
         // Verificar se o XML é válido
         if (!xml.includes('<definitions') || !xml.includes('</definitions>')) {
           throw new Error('XML BPMN inválido - não contém definições');
         }
         
         // 3. Criar o viewer
-        console.log('[BPMN] Criando viewer BPMN...');
         if (ref.current) {
           currentViewer = new BpmnJS({
             container: ref.current
           });
           
           setViewer(currentViewer);
-          console.log('[BPMN] Viewer criado com sucesso');
         } else {
           throw new Error('Container não disponível');
         }
@@ -117,14 +107,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         if (currentViewer) {
           // Verificar novamente se o componente ainda está montado
           if (!ref.current) {
-            console.log('Componente desmontado durante processamento, abortando');
             return;
           }
           
-          console.log('Importando XML...');
           await currentViewer.importXML(xml);
-          
-          console.log('XML importado com sucesso, ajustando zoom...');
           try {
             const canvas = currentViewer.get('canvas');
             if (canvas && canvas.zoom) {
@@ -262,8 +248,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
             return map;
           })());
-
-          console.log('Configurando eventos...');
           const contentById: Record<string, any> = (() => {
             if (content && content.elements) return content.elements;
             return {};
@@ -330,7 +314,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                     const edits = JSON.parse(stored);
                     if (edits[id]) {
                       finalData = { ...merged, ...edits[id] };
-                      console.log('[Edição] Carregadas edições salvas para', id, edits[id]);
                     }
                   }
                 } catch (e) {
@@ -357,7 +340,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             } else if (clickCount === 2) {
               // Duplo clique - abrir modal
               clearTimeout(clickTimer);
-              console.log('[Click] Duplo clique detectado! Abrindo modal para:', id);
               const details = contentById[id];
               const fallback = flat[id];
               const businessObject = element.businessObject;
@@ -408,7 +390,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 x: (window.innerWidth - 800) / 2, 
                 y: (window.innerHeight - 600) / 2 
               });
-              console.log('[Modal] Aberto! showModal =', true, 'selected =', finalData.nome);
               clickCount = 0;
             }
           });
@@ -435,8 +416,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             const id = e.element.id;
             if (active[id]) { overlays.remove(active[id]); delete active[id]; }
           });
-
-          console.log('BPMN carregado com sucesso!');
           
           // Verificar se o diagrama está visível após um pequeno delay
           setTimeout(() => {
@@ -445,13 +424,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               const elementRegistry = currentViewer.get('elementRegistry');
               const elements = elementRegistry.getAll();
               
-              console.log('Verificação final - Elementos:', elements.length);
-              console.log('Container ref:', ref.current);
-              console.log('Container children:', ref.current.children.length);
-              
               // Se não há elementos visíveis, mostrar mensagem
               if (elements.length === 0) {
-                console.warn('Nenhum elemento encontrado no diagrama');
                 if (ref.current) {
                   ref.current.innerHTML = `
                     <div style="padding:20px;text-align:center;color:#666;">
@@ -520,7 +494,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     return () => {
       try { 
         if (currentViewer) {
-          console.log('Destruindo viewer...');
           currentViewer.destroy(); 
         }
       } catch (e) {
@@ -548,7 +521,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       popItReferencia: [],
       observacoes: []
     };
-    console.log('Iniciando edição com dados:', initialData);
     setEditedData(initialData);
     setIsEditing(true);
   };
@@ -559,7 +531,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   };
 
   const handleSaveEdit = () => {
-    console.log('Salvando edição...', { selectedId, editedData });
     
     if (selectedId && editedData) {
       setLocalEdits((prev: any) => {
@@ -569,7 +540,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         try {
           const storageKey = `bpmn_edits_${bpmnUrl}`;
           localStorage.setItem(storageKey, JSON.stringify(newEdits));
-          console.log('[Storage] Dados salvos com sucesso no localStorage:', newEdits);
         } catch (e) {
           console.error('[Storage] Erro ao salvar edições no localStorage:', e);
         }
@@ -580,24 +550,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       setSelected(editedData);
       setIsEditing(false);
       setEditedData(null);
-    } else {
-      console.warn('[Erro] Não foi possível salvar: selectedId ou editedData ausentes');
     }
   };
 
   const handleFieldChange = (field: string, value: any) => {
-    console.log('Campo alterado:', field, value);
     setEditedData((prev: any) => ({ ...prev, [field]: value }));
   };
 
   const handleArrayFieldChange = (field: string, index: number, value: string) => {
-    console.log('Array campo alterado:', field, index, value);
     setEditedData((prev: any) => {
       const array = [...(prev[field] || [])];
       array[index] = value;
-      const newData = { ...prev, [field]: array };
-      console.log('Novo editedData após alteração:', newData);
-      return newData;
+      return { ...prev, [field]: array };
     });
   };
 

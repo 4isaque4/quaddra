@@ -123,7 +123,6 @@ export default function ProcessSettingsModal({
       }
       
       localStorage.setItem(storageKey, JSON.stringify(names));
-      console.log('[Config] Nome customizado salvo:', customName);
       
       // Recarregar página para aplicar o novo nome
       window.location.reload();
