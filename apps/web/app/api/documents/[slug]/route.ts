@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { existsSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { Octokit } from '@octokit/rest';
 
@@ -223,5 +223,133 @@ export async function POST(
   } catch (error) {
     console.error('Erro ao fazer upload:', error);
     return NextResponse.json({ error: 'Erro ao fazer upload' }, { status: 500 });
+  }
+}
+
+// DELETE: Remover documento
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { slug: string } }
+) {
+  try {
+    const { slug } = params;
+    const decodedSlug = decodeURIComponent(slug);
+    
+    const { searchParams } = new URL(request.url);
+    const filename = searchParams.get('filename');
+
+    if (!filename) {
+      return NextResponse.json({ error: 'Nome do arquivo não fornecido' }, { status: 400 });
+    }
+
+    // Encontrar a pasta do processo
+    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn');
+    
+    if (!existsSync(bpmnDir)) {
+      return NextResponse.json({ error: 'Diretório BPMN não encontrado' }, { status: 404 });
+    }
+
+    const folders = readdirSync(bpmnDir).filter(f => {
+      const fullPath = join(bpmnDir, f);
+      return statSync(fullPath).isDirectory();
+    });
+
+    // Normalizar slug para comparação
+    const normalizeStr = (str: string) => str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ç/g, 'c')
+      .replace(/Ç/g, 'C')
+      .replace(/\s+/g, '-')
+      .replace(/\//g, '-')
+      .toLowerCase();
+
+    const slugNormalized = normalizeStr(decodedSlug);
+
+    const processFolder = folders.find(folder => {
+      const folderNormalized = normalizeStr(folder);
+      
+      // Comparação direta
+      if (folder === decodedSlug) return true;
+      if (folderNormalized === slugNormalized) return true;
+      
+      // Comparação flexível (contém ou começa com)
+      if (folderNormalized.includes(slugNormalized)) return true;
+      if (slugNormalized.includes(folderNormalized)) return true;
+      
+      return false;
+    });
+
+    // Se não encontrou pasta, pode ser um arquivo na raiz
+    let docsDir: string;
+    let githubPathPrefix: string;
+    
+    if (!processFolder) {
+      console.log(`[Documents API DELETE] Arquivo na raiz detectado: ${decodedSlug}`);
+      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
+      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
+      githubPathPrefix = `apps/api/storage/bpmn/_root_docs/${decodedSlug}`;
+    } else {
+      docsDir = join(bpmnDir, processFolder, 'docs');
+      githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
+    }
+
+    const filePath = join(docsDir, filename);
+
+    if (!existsSync(filePath)) {
+      return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
+    }
+
+    // Remover arquivo localmente
+    unlinkSync(filePath);
+
+    // Remover do GitHub
+    let githubSynced = false;
+    try {
+      const token = process.env.GITHUB_TOKEN;
+      const owner = process.env.GITHUB_OWNER || '4isaque4';
+      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || 'quaddra';
+
+      if (token) {
+        const octokit = new Octokit({ auth: token });
+        const githubPath = `${githubPathPrefix}/${filename}`;
+
+        // Buscar SHA do arquivo
+        try {
+          const { data: existingFile } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: githubPath,
+          });
+
+          if (!Array.isArray(existingFile) && existingFile.sha) {
+            await octokit.repos.deleteFile({
+              owner,
+              repo,
+              path: githubPath,
+              message: `docs: remover documento ${filename} do processo ${processFolder || decodedSlug}`,
+              sha: existingFile.sha,
+            });
+
+            githubSynced = true;
+          }
+        } catch {
+          // Arquivo não existe no GitHub
+        }
+      }
+    } catch (githubError) {
+      console.error('Erro ao remover do GitHub:', githubError);
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: githubSynced 
+        ? 'Arquivo removido e sincronizado com GitHub' 
+        : 'Arquivo removido localmente',
+      githubSynced
+    });
+  } catch (error) {
+    console.error('Erro ao remover arquivo:', error);
+    return NextResponse.json({ error: 'Erro ao remover arquivo' }, { status: 500 });
   }
 }
