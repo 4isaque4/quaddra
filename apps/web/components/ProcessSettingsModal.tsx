@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import Draggable from 'react-draggable';
+import Notification from './Notification';
+import ConfirmDialog from './ConfirmDialog';
 
 type ProcessSettingsModalProps = {
   isOpen: boolean;
@@ -30,6 +32,8 @@ export default function ProcessSettingsModal({
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -82,18 +86,18 @@ export default function ProcessSettingsModal({
       });
 
       if (response.ok) {
-        alert('Documento enviado com sucesso!');
+        setNotificacao({ tipo: 'sucesso', mensagem: 'Documento enviado com sucesso!' });
         loadDocuments(); // Recarregar lista
         if (fileInputRef.current) {
           fileInputRef.current.value = ''; // Limpar input
         }
       } else {
         const data = await response.json();
-        alert(`Erro ao enviar documento: ${data.error || 'Erro desconhecido'}`);
+        setNotificacao({ tipo: 'erro', mensagem: `Erro ao enviar documento: ${data.error || 'Erro desconhecido'}` });
       }
     } catch (error) {
       console.error('Erro ao fazer upload:', error);
-      alert('Erro ao enviar documento');
+      setNotificacao({ tipo: 'erro', mensagem: 'Erro ao enviar documento' });
     } finally {
       setIsUploading(false);
     }
@@ -125,23 +129,30 @@ export default function ProcessSettingsModal({
       window.location.reload();
     } catch (e) {
       console.error('[Erro] Erro ao salvar nome customizado:', e);
-      alert('Erro ao salvar nome customizado');
+      setNotificacao({ tipo: 'erro', mensagem: 'Erro ao salvar nome customizado' });
     }
   };
 
-  const handleSaveFileName = async () => {
+  const handleSaveFileName = () => {
     if (newFileName === originalFileName) {
-      alert('O nome do arquivo não foi alterado');
+      setNotificacao({ tipo: 'aviso', mensagem: 'O nome do arquivo não foi alterado' });
       return;
     }
     
     if (!newFileName.endsWith('.bpmn')) {
-      alert('O nome do arquivo deve terminar com .bpmn');
+      setNotificacao({ tipo: 'aviso', mensagem: 'O nome do arquivo deve terminar com .bpmn' });
       return;
     }
 
-    const confirmed = confirm('ATENÇÃO: Esta ação irá renomear o arquivo físico no servidor. Tem certeza?');
-    if (!confirmed) return;
+    setConfirmDialog({
+      titulo: 'Confirmar Renomeação',
+      mensagem: 'Esta ação irá renomear o arquivo físico no servidor. Tem certeza?',
+      onConfirm: executeRename
+    });
+  };
+
+  const executeRename = async () => {
+    setConfirmDialog(null);
 
     try {
       // Construir o caminho relativo do arquivo
@@ -159,24 +170,47 @@ export default function ProcessSettingsModal({
       const data = await response.json();
 
       if (response.ok) {
-        alert('Arquivo renomeado com sucesso! A página será recarregada.');
+        setNotificacao({ tipo: 'sucesso', mensagem: 'Arquivo renomeado com sucesso! Redirecionando...' });
         
-        // Recarregar página com novo slug
-        const newSlug = data.newPath.replace(/\.bpmn$/i, '').replace(/\//g, '-').toLowerCase();
-        window.location.href = `/processos/${encodeURIComponent(newSlug)}`;
+        // Recarregar página com novo slug após 2 segundos
+        setTimeout(() => {
+          const newSlug = data.newPath.replace(/\.bpmn$/i, '').replace(/\//g, '-').toLowerCase();
+          window.location.href = `/processos/${encodeURIComponent(newSlug)}`;
+        }, 2000);
       } else {
-        alert(`Erro ao renomear arquivo: ${data.error || 'Erro desconhecido'}`);
+        setNotificacao({ tipo: 'erro', mensagem: `Erro ao renomear arquivo: ${data.error || 'Erro desconhecido'}` });
       }
     } catch (error) {
       console.error('Erro ao renomear arquivo:', error);
-      alert('Erro ao renomear arquivo');
+      setNotificacao({ tipo: 'erro', mensagem: 'Erro ao renomear arquivo' });
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100] p-4">
+    <>
+      {/* Notificações */}
+      {notificacao && (
+        <Notification
+          tipo={notificacao.tipo}
+          mensagem={notificacao.mensagem}
+          onClose={() => setNotificacao(null)}
+        />
+      )}
+
+      {/* Dialog de Confirmação */}
+      {confirmDialog && (
+        <ConfirmDialog
+          titulo={confirmDialog.titulo}
+          mensagem={confirmDialog.mensagem}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+          tipo="danger"
+        />
+      )}
+
+      <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100] p-4">
       <Draggable handle=".drag-handle" bounds="parent">
         <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header arrastável */}
@@ -357,5 +391,6 @@ export default function ProcessSettingsModal({
         </div>
       </Draggable>
     </div>
+    </>
   );
 }
