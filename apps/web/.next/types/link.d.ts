@@ -30,6 +30,7 @@ declare namespace __next_route_internal_types__ {
 
   type StaticRoutes = 
     | `/`
+    | `/api/delete-processo`
     | `/api/descriptions`
     | `/api/rename-file`
     | `/api/sync-github`
@@ -38,11 +39,11 @@ declare namespace __next_route_internal_types__ {
     | `/processos`
     | `/processos/inserir`
   type DynamicRoutes<T extends string = string> = 
-    | `/api/bpmn/${SafeSlug<T>}`
     | `/api/content/${SafeSlug<T>}`
-    | `/api/popit/${SafeSlug<T>}/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}/download/${SafeSlug<T>}`
+    | `/api/popit/${SafeSlug<T>}/${SafeSlug<T>}`
+    | `/api/bpmn/${SafeSlug<T>}`
     | `/processos/${SafeSlug<T>}`
 
   type RouteImpl<T> = 

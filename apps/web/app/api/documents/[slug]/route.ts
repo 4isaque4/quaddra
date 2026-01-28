@@ -51,13 +51,17 @@ export async function GET(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz
+    // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
     let docsDir: string;
+    let processFolderName: string;
+    
     if (!processFolder) {
       console.log(`[Documents API] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
-      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
+      // Criar pasta com o nome do processo diretamente na raiz
+      processFolderName = decodedSlug;
+      docsDir = join(bpmnDir, processFolderName, 'pop-it');
     } else {
+      processFolderName = processFolder;
       docsDir = join(bpmnDir, processFolder, 'docs');
     }
 
@@ -142,16 +146,19 @@ export async function POST(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz
+    // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
     let docsDir: string;
     let githubPathPrefix: string;
+    let processFolderName: string;
     
     if (!processFolder) {
       console.log(`[Documents API POST] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
-      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
-      githubPathPrefix = `apps/api/storage/bpmn/_root_docs/${decodedSlug}`;
+      // Criar pasta com o nome do processo diretamente na raiz, subpasta pop-it
+      processFolderName = decodedSlug;
+      docsDir = join(bpmnDir, processFolderName, 'pop-it');
+      githubPathPrefix = `apps/api/storage/bpmn/${processFolderName}/pop-it`;
     } else {
+      processFolderName = processFolder;
       docsDir = join(bpmnDir, processFolder, 'docs');
       githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
     }
@@ -198,7 +205,7 @@ export async function POST(
           owner,
           repo,
           path: githubPath,
-          message: `docs: adicionar documento ${file.name} ao processo ${processFolder || decodedSlug}`,
+          message: `docs: adicionar documento ${file.name} ao processo ${processFolderName}`,
           content,
           sha,
         });
@@ -280,16 +287,19 @@ export async function DELETE(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz
+    // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
     let docsDir: string;
     let githubPathPrefix: string;
+    let processFolderName: string;
     
     if (!processFolder) {
       console.log(`[Documents API DELETE] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
-      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
-      githubPathPrefix = `apps/api/storage/bpmn/_root_docs/${decodedSlug}`;
+      // Criar pasta com o nome do processo diretamente na raiz, subpasta pop-it
+      processFolderName = decodedSlug;
+      docsDir = join(bpmnDir, processFolderName, 'pop-it');
+      githubPathPrefix = `apps/api/storage/bpmn/${processFolderName}/pop-it`;
     } else {
+      processFolderName = processFolder;
       docsDir = join(bpmnDir, processFolder, 'docs');
       githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
     }
@@ -327,7 +337,7 @@ export async function DELETE(
               owner,
               repo,
               path: githubPath,
-              message: `docs: remover documento ${filename} do processo ${processFolder || decodedSlug}`,
+              message: `docs: remover documento ${filename} do processo ${processFolderName}`,
               sha: existingFile.sha,
             });
 
