@@ -260,11 +260,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               const html = document.createElement('div');
               html.className = 'tooltip';
               html.style.pointerEvents = 'none';
+              html.style.zIndex = '1000';
               html.innerHTML = `<div class="title">${escapeHtml(info.name || id)}</div>
                 <div class="meta">${escapeHtml(info.file || '')}${info.processName ? ' • ' + escapeHtml(info.processName) : ''}</div>
                 <div>${escapeHtml(info.description || '')}</div>`;
               if (active[id]) overlays.remove(active[id]);
-              active[id] = overlays.add(id, { position: { bottom: 10, left: 0 }, html });
+              active[id] = overlays.add(id, { position: { top: -5, left: 0 }, html });
             }
           });
 
@@ -402,8 +403,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               if (refName) {
                 try {
                   overlays.add(el, {
-                    position: { bottom: -10, left: -6 },
-                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid #d4d4d4;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:#111;pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);">${escapeHtml(refName)}</span>`
+                    position: { bottom: -28, left: 0 },
+                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid #d4d4d4;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:#111;pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);z-index:100;display:block;text-align:center;">${escapeHtml(refName)}</span>`
                   });
                 } catch (ovErr) {
                   console.warn('Falha ao adicionar label de data store', el.id, ovErr);
