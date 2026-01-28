@@ -11,6 +11,13 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: 'Quaddra - Soluções Inovadoras',
   description: 'Transformamos ideias em realidade digital com tecnologia de ponta e uma equipe apaixonada pelo que faz.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png' },
+    ],
+    apple: '/apple-icon.png',
+  },
 }
 
 export default function RootLayout({
