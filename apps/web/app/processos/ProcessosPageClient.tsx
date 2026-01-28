@@ -26,6 +26,25 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
   const [deletando, setDeletando] = useState<string | null>(null);
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
   const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
+  const [nomesCustomizados, setNomesCustomizados] = useState<Record<string, string>>({});
+
+  // Carregar nomes customizados do localStorage
+  useEffect(() => {
+    try {
+      const storageKey = 'process_custom_names';
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        setNomesCustomizados(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar nomes customizados:', e);
+    }
+  }, []);
+
+  // Função para obter o nome de exibição (customizado ou original)
+  const getDisplayName = (processo: ProcessoItem) => {
+    return nomesCustomizados[processo.slug] || processo.nome;
+  };
 
   // Filtrar processos
   const processosFiltrados = processos.filter(p =>
@@ -80,7 +99,7 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
       setProcessos(processos.filter(p => p.slug !== processoADeletar.slug));
       setProcessoADeletar(null);
       
-      mostrarNotificacao('sucesso', `Processo "${processoADeletar.nome}" deletado com sucesso!`);
+      mostrarNotificacao('sucesso', `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado com sucesso!`);
       
       // Recarregar a página após 2 segundos para garantir que os dados estejam atualizados
       setTimeout(() => {
@@ -141,7 +160,7 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
                       className="bg-white border border-gray-200 rounded-lg p-5 hover:border-orange-500 transition-colors"
                     >
                       <h3 className="text-base font-semibold text-gray-900 mb-3">
-                        {processo.nome}
+                        {getDisplayName(processo)}
                       </h3>
                       <div className="flex gap-2">
                         <Link
@@ -216,7 +235,7 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
               Deletar processo?
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              <strong>{processoADeletar.nome}</strong>
+              <strong>{nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}</strong>
             </p>
             <p className="text-xs text-gray-500 mb-6">
               Esta ação não pode ser desfeita.
