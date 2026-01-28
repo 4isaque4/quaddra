@@ -30,9 +30,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [documentos, setDocumentos] = useState<Array<{name: string, size: number, path: string}>>([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docNotificacao, setDocNotificacao] = useState<{tipo: 'sucesso' | 'erro', msg: string} | null>(null);
 
   // Extrair slug do processo do bpmnUrl
   const processSlug = bpmnUrl.replace('/api/bpmn/', '').replace(/\//g, '-');
+  
+  // Auto-fechar notificação de documento
+  useEffect(() => {
+    if (docNotificacao) {
+      const timer = setTimeout(() => setDocNotificacao(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [docNotificacao]);
 
   // Carregar documentos do processo
   const loadDocumentos = async () => {
@@ -53,6 +62,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     if (!file) return;
 
     setUploadingDoc(true);
+    setDocNotificacao(null);
+    
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -62,14 +73,31 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         body: formData
       });
 
-      if (response.ok) {
-        loadDocumentos();
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        await loadDocumentos();
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        setDocNotificacao({
+          tipo: 'sucesso',
+          msg: data.githubSynced 
+            ? `"${file.name}" enviado e sincronizado com GitHub!` 
+            : `"${file.name}" salvo localmente`
+        });
+      } else {
+        setDocNotificacao({
+          tipo: 'erro',
+          msg: data.error || 'Erro ao enviar documento'
+        });
       }
     } catch (e) {
       console.warn('Erro ao fazer upload:', e);
+      setDocNotificacao({
+        tipo: 'erro',
+        msg: 'Erro de conexão ao enviar documento'
+      });
     } finally {
       setUploadingDoc(false);
     }
@@ -945,6 +973,27 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 </div>
                 <div className="border-t border-gray-200 pt-4 mt-4">
                   <p className="text-xs uppercase text-gray-500 mb-2" style={{ fontWeight: 400 }}>Documentos Anexados</p>
+                  
+                  {/* Notificação de upload */}
+                  {docNotificacao && (
+                    <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
+                      docNotificacao.tipo === 'sucesso' 
+                        ? 'bg-green-50 text-green-800 border border-green-200' 
+                        : 'bg-red-50 text-red-800 border border-red-200'
+                    }`}>
+                      {docNotificacao.tipo === 'sucesso' ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span>{docNotificacao.msg}</span>
+                    </div>
+                  )}
+                  
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1278,6 +1327,27 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 </div>
                 <div className="border-t border-gray-200 pt-4 mt-4">
                   <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Documentos Anexados</h3>
+                  
+                  {/* Notificação de upload */}
+                  {docNotificacao && (
+                    <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
+                      docNotificacao.tipo === 'sucesso' 
+                        ? 'bg-green-50 text-green-800 border border-green-200' 
+                        : 'bg-red-50 text-red-800 border border-red-200'
+                    }`}>
+                      {docNotificacao.tipo === 'sucesso' ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span>{docNotificacao.msg}</span>
+                    </div>
+                  )}
+                  
                   {documentos.length === 0 ? (
                     <p className="text-sm text-gray-400 mb-3">Nenhum documento anexado</p>
                   ) : (
