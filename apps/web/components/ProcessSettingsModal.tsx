@@ -124,8 +124,15 @@ export default function ProcessSettingsModal({
       
       localStorage.setItem(storageKey, JSON.stringify(names));
       
-      // Recarregar página para aplicar o novo nome
-      window.location.reload();
+      // Fechar modal e atualizar sem recarregar
+      setNotificacao({ tipo: 'sucesso', mensagem: 'Nome customizado salvo!' });
+      
+      // Fechar modal após 1 segundo
+      setTimeout(() => {
+        onClose();
+        // Recarregar página para aplicar o novo nome
+        window.location.reload();
+      }, 1000);
     } catch (e) {
       console.error('[Erro] Erro ao salvar nome customizado:', e);
       setNotificacao({ tipo: 'erro', mensagem: 'Erro ao salvar nome customizado' });
