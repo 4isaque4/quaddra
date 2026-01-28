@@ -81,6 +81,11 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
       setProcessoADeletar(null);
       
       mostrarNotificacao('sucesso', `Processo "${processoADeletar.nome}" deletado com sucesso!`);
+      
+      // Recarregar a página após 2 segundos para garantir que os dados estejam atualizados
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
     } catch (error: any) {
       console.error('Erro ao deletar:', error);
       mostrarNotificacao('erro', error.message || 'Erro ao deletar processo');

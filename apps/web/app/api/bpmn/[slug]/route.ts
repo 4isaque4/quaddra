@@ -60,13 +60,21 @@ export async function GET(
     })
     
     if (!matchingFile) {
+      console.log('[BPMN API] Arquivo não encontrado para slug:', normalizedSlug)
+      console.log('[BPMN API] Arquivos disponíveis:', files.map(f => normalizeSlug(f.path.replace(/\.bpmn$/i, ''))))
       return NextResponse.json(
         { error: `Arquivo BPMN não encontrado para slug: ${normalizedSlug}` },
         { status: 404 }
       )
     }
     
-    const filePath = join(bpmnDir, matchingFile.path.replace(/\//g, '\\'))
+    // Usar join corretamente sem forçar separadores
+    const pathParts = matchingFile.path.split('/')
+    const filePath = join(bpmnDir, ...pathParts)
+    
+    console.log('[BPMN API] Tentando ler arquivo:', filePath)
+    console.log('[BPMN API] Arquivo existe?', existsSync(filePath))
+    
     const fileContent = readFileSync(filePath, 'utf8')
     
     return new NextResponse(fileContent, {
