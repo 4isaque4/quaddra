@@ -96,7 +96,17 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         // 3. Criar o viewer
         if (ref.current) {
           currentViewer = new BpmnJS({
-            container: ref.current
+            container: ref.current,
+            textRenderer: {
+              defaultStyle: {
+                fontSize: 10,
+                lineHeight: 1.1
+              },
+              externalStyle: {
+                fontSize: 9,
+                lineHeight: 1.1
+              }
+            }
           });
           
           setViewer(currentViewer);
@@ -124,6 +134,33 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           eventBus = currentViewer.get('eventBus');
           canvas = currentViewer.get('canvas');
           elementRegistry = currentViewer.get('elementRegistry');
+
+          // Função para limitar linhas de texto nos labels
+          const clampLabelText = () => {
+            if (!canvas || !elementRegistry) return;
+
+            elementRegistry.getAll().forEach((el: any) => {
+              const gfx = canvas.getGraphics(el);
+              if (!gfx) return;
+
+              const textEl = gfx.querySelector('text.djs-label');
+              if (!textEl) return;
+
+              const maxLines = el.type === 'bpmn:TextAnnotation' ? 5 : 3;
+              const tspans = Array.from(textEl.querySelectorAll('tspan'));
+
+              if (tspans.length <= maxLines) return;
+
+              tspans.slice(maxLines).forEach((tspan: any) => tspan.remove());
+              const lastLine = tspans[maxLines - 1] as Element;
+
+              if (lastLine) {
+                const original = lastLine.textContent || '';
+                const trimmed = original.replace(/…$/, '').trim();
+                lastLine.textContent = trimmed ? `${trimmed}…` : '…';
+              }
+            });
+          };
 
           // estilo de cursor/hover/seleção
           cursorStyleEl = document.createElement('style');
@@ -170,7 +207,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             
             /* Ajustar texto em tarefas para não sobrepor ícones */
             .djs-element .djs-visual text {
-              font-size: 11px !important;
+              font-size: 10px !important;
               font-weight: 400 !important;
             }
             /* Forçar peso normal em todo texto/label/tspan, inclusive herdados do Bizagi */
@@ -233,7 +270,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             /* Anotações de texto - reduzir drasticamente */
             .djs-element[class*="TextAnnotation"] .djs-visual text,
             .djs-element[class*="TextAnnotation"] .djs-label text {
-              font-size: 9px !important;
+              font-size: 8px !important;
               font-weight: 400 !important;
             }
             
@@ -251,7 +288,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
             
             .djs-label text {
-              font-size: 11px !important;
+              font-size: 10px !important;
             }
             
             /* Remover overlays de hover completamente */
@@ -271,6 +308,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
           `;
           document.head.appendChild(cursorStyleEl);
+          requestAnimationFrame(() => clampLabelText());
 
           const flat: any = Array.isArray(desc) ? {} : (desc.elements ? desc.elements : (() => {
             const map: any = {};
