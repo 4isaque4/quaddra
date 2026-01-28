@@ -13,10 +13,9 @@ export const metadata: Metadata = {
   description: 'Transformamos ideias em realidade digital com tecnologia de ponta e uma equipe apaixonada pelo que faz.',
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.png', type: 'image/png', sizes: '48x48' },
     ],
-    apple: '/apple-icon.png',
   },
 }
 
@@ -28,6 +27,8 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={poppins.variable}>
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <meta name="theme-color" content="#FF9933" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       </head>
