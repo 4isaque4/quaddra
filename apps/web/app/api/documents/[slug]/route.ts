@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { existsSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { Octokit } from '@octokit/rest';
 
 // GET: Listar documentos de um processo
 export async function GET(
@@ -126,19 +127,64 @@ export async function POST(
       mkdirSync(docsDir, { recursive: true });
     }
 
-    // Salvar arquivo
+    // Salvar arquivo localmente
     const buffer = Buffer.from(await file.arrayBuffer());
     const filePath = join(docsDir, file.name);
     
     writeFileSync(filePath, buffer);
 
+    // Enviar para o GitHub
+    let githubSynced = false;
+    try {
+      const token = process.env.GITHUB_TOKEN;
+      const owner = process.env.GITHUB_OWNER || '4isaque4';
+      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || 'quaddra';
+
+      if (token) {
+        const octokit = new Octokit({ auth: token });
+        const githubPath = `apps/api/storage/bpmn/${processFolder}/docs/${file.name}`;
+        const content = buffer.toString('base64');
+
+        // Verificar se arquivo já existe
+        let sha: string | undefined;
+        try {
+          const { data: existingFile } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: githubPath,
+          });
+          if (!Array.isArray(existingFile) && existingFile.sha) {
+            sha = existingFile.sha;
+          }
+        } catch {
+          // Arquivo não existe, ok para criar
+        }
+
+        await octokit.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path: githubPath,
+          message: `docs: adicionar documento ${file.name} ao processo ${processFolder}`,
+          content,
+          sha,
+        });
+
+        githubSynced = true;
+      }
+    } catch (githubError) {
+      console.error('Erro ao sincronizar com GitHub:', githubError);
+    }
+
     return NextResponse.json({ 
       success: true, 
-      message: 'Arquivo enviado com sucesso',
+      message: githubSynced 
+        ? 'Arquivo enviado e sincronizado com GitHub' 
+        : 'Arquivo enviado localmente (GitHub não configurado)',
       file: {
         name: file.name,
         size: file.size
-      }
+      },
+      githubSynced
     });
   } catch (error) {
     console.error('Erro ao fazer upload:', error);
