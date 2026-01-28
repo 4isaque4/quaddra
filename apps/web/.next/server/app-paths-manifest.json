@@ -1,4 +1,4 @@
 {
-  "/processos/inserir/page": "app/processos/inserir/page.js",
-  "/page": "app/page.js"
+  "/page": "app/page.js",
+  "/processos/inserir/page": "app/processos/inserir/page.js"
 }
