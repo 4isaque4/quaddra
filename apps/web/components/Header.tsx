@@ -16,16 +16,17 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-white shadow-sm fixed top-0 left-0 w-full z-50 h-20">
+    <header className="bg-white shadow-sm fixed top-0 left-0 w-full z-50 h-24">
       <nav className="container flex justify-between items-center h-full">
         <Link href="/" className="logo" onClick={closeMenu}>
           <Image 
             src="/logo.png" 
             alt="Quaddra" 
-            width={240} 
-            height={60}
+            width={1200} 
+            height={300}
             priority
-            className="h-14 w-auto"
+            style={{ height: '200px', width: 'auto' }}
+            className="logo-image"
           />
         </Link>
         
