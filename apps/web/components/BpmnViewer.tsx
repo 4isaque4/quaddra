@@ -230,6 +230,41 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               color: #333;
             }
             
+            /* Anotações de texto - reduzir drasticamente */
+            .djs-element[class*="TextAnnotation"] .djs-visual text,
+            .djs-element[class*="TextAnnotation"] .djs-label text {
+              font-size: 9px !important;
+              font-weight: 400 !important;
+            }
+            
+            .djs-element[class*="TextAnnotation"] {
+              max-width: 180px !important;
+            }
+            
+            .djs-element[class*="TextAnnotation"] .djs-label {
+              max-width: 180px !important;
+            }
+            
+            /* Controlar tamanho de todos os labels */
+            .djs-label {
+              max-width: 250px !important;
+            }
+            
+            .djs-label text {
+              font-size: 11px !important;
+            }
+            
+            /* Remover overlays de hover completamente */
+            .djs-overlay-context {
+              display: none !important;
+            }
+            
+            /* Overlays permanentes (data stores) - menor z-index */
+            .djs-overlay {
+              pointer-events: none !important;
+              z-index: 1 !important;
+            }
+            
             /* Remover watermark bpmn.io */
             .bjs-powered-by {
               display: none !important;
@@ -253,21 +288,22 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             return {};
           })();
 
-          eventBus.on('element.hover', 100, function(e: any) {
-            const id = e.element.id;
-            const info = flat[id];
-            if (info && (info.description || info.name)) {
-              const html = document.createElement('div');
-              html.className = 'tooltip';
-              html.style.pointerEvents = 'none';
-              html.style.zIndex = '1000';
-              html.innerHTML = `<div class="title">${escapeHtml(info.name || id)}</div>
-                <div class="meta">${escapeHtml(info.file || '')}${info.processName ? ' • ' + escapeHtml(info.processName) : ''}</div>
-                <div>${escapeHtml(info.description || '')}</div>`;
-              if (active[id]) overlays.remove(active[id]);
-              active[id] = overlays.add(id, { position: { top: -5, left: 0 }, html });
-            }
-          });
+          // DESABILITADO: Tooltips ao passar o mouse causam sobreposição
+          // eventBus.on('element.hover', 100, function(e: any) {
+          //   const id = e.element.id;
+          //   const info = flat[id];
+          //   if (info && (info.description || info.name)) {
+          //     const html = document.createElement('div');
+          //     html.className = 'tooltip';
+          //     html.style.pointerEvents = 'none';
+          //     html.style.zIndex = '1000';
+          //     html.innerHTML = `<div class="title">${escapeHtml(info.name || id)}</div>
+          //       <div class="meta">${escapeHtml(info.file || '')}${info.processName ? ' • ' + escapeHtml(info.processName) : ''}</div>
+          //       <div>${escapeHtml(info.description || '')}</div>`;
+          //     if (active[id]) overlays.remove(active[id]);
+          //     active[id] = overlays.add(id, { position: { top: -5, left: 0 }, html });
+          //   }
+          // });
 
           let clickCount = 0;
           let clickTimer: any = null;
