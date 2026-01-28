@@ -25,23 +25,37 @@ export async function GET(
       return statSync(fullPath).isDirectory();
     });
 
+    // Normalizar slug para comparação
+    const normalizeStr = (str: string) => str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ç/g, 'c')
+      .replace(/Ç/g, 'C')
+      .replace(/\s+/g, '-')
+      .replace(/\//g, '-')
+      .toLowerCase();
+
+    const slugNormalized = normalizeStr(decodedSlug);
+
     const processFolder = folders.find(folder => {
-      const normalized = folder
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/ç/g, 'c')
-        .replace(/Ç/g, 'C')
-        .replace(/\s+/g, '-')
-        .replace(/\//g, '-')
-        .toLowerCase();
+      const folderNormalized = normalizeStr(folder);
       
-      return normalized === decodedSlug.toLowerCase() || 
-             folder === decodedSlug ||
-             decodedSlug.includes(normalized);
+      // Comparação direta
+      if (folder === decodedSlug) return true;
+      if (folderNormalized === slugNormalized) return true;
+      
+      // Comparação flexível (contém ou começa com)
+      if (folderNormalized.includes(slugNormalized)) return true;
+      if (slugNormalized.includes(folderNormalized)) return true;
+      
+      return false;
     });
 
     if (!processFolder) {
-      return NextResponse.json({ error: 'Processo não encontrado' }, { status: 404 });
+      // Se não encontrou pasta, pode ser arquivo na raiz - retornar vazio
+      console.log(`[Documents API] Processo não encontrado para slug: ${decodedSlug}`);
+      console.log(`[Documents API] Pastas disponíveis: ${folders.join(', ')}`);
+      return NextResponse.json({ documents: [], message: 'Pasta do processo não encontrada' });
     }
 
     const docsDir = join(bpmnDir, processFolder, 'docs');
@@ -101,23 +115,36 @@ export async function POST(
       return statSync(fullPath).isDirectory();
     });
 
+    // Normalizar slug para comparação
+    const normalizeStr = (str: string) => str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ç/g, 'c')
+      .replace(/Ç/g, 'C')
+      .replace(/\s+/g, '-')
+      .replace(/\//g, '-')
+      .toLowerCase();
+
+    const slugNormalized = normalizeStr(decodedSlug);
+
     const processFolder = folders.find(folder => {
-      const normalized = folder
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/ç/g, 'c')
-        .replace(/Ç/g, 'C')
-        .replace(/\s+/g, '-')
-        .replace(/\//g, '-')
-        .toLowerCase();
+      const folderNormalized = normalizeStr(folder);
       
-      return normalized === decodedSlug.toLowerCase() || 
-             folder === decodedSlug ||
-             decodedSlug.includes(normalized);
+      // Comparação direta
+      if (folder === decodedSlug) return true;
+      if (folderNormalized === slugNormalized) return true;
+      
+      // Comparação flexível (contém ou começa com)
+      if (folderNormalized.includes(slugNormalized)) return true;
+      if (slugNormalized.includes(folderNormalized)) return true;
+      
+      return false;
     });
 
     if (!processFolder) {
-      return NextResponse.json({ error: 'Processo não encontrado' }, { status: 404 });
+      console.log(`[Documents API POST] Processo não encontrado para slug: ${decodedSlug}`);
+      console.log(`[Documents API POST] Pastas disponíveis: ${folders.join(', ')}`);
+      return NextResponse.json({ error: `Processo não encontrado: ${decodedSlug}` }, { status: 404 });
     }
 
     const docsDir = join(bpmnDir, processFolder, 'docs');
