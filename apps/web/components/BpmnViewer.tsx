@@ -108,6 +108,43 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     }
   };
 
+  // Deletar documento
+  const handleDocDelete = async (filename: string) => {
+    if (!confirm(`Deseja realmente excluir "${filename}"?`)) return;
+
+    setDocNotificacao(null);
+    
+    try {
+      const response = await fetch(
+        `/api/documents/${encodeURIComponent(processSlug)}?filename=${encodeURIComponent(filename)}`,
+        { method: 'DELETE' }
+      );
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        await loadDocumentos();
+        setDocNotificacao({
+          tipo: 'sucesso',
+          msg: data.githubSynced 
+            ? `"${filename}" removido e sincronizado com GitHub!` 
+            : `"${filename}" removido localmente`
+        });
+      } else {
+        setDocNotificacao({
+          tipo: 'erro',
+          msg: data.error || 'Erro ao remover documento'
+        });
+      }
+    } catch (e) {
+      console.warn('Erro ao deletar documento:', e);
+      setDocNotificacao({
+        tipo: 'erro',
+        msg: 'Erro de conexão ao remover documento'
+      });
+    }
+  };
+
   // Carregar documentos quando o modal abrir
   useEffect(() => {
     if (showModal) {
@@ -1013,13 +1050,24 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                       {documentos.map((doc, idx) => (
                         <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
                           <span className="text-gray-800 truncate flex-1">{doc.name}</span>
-                          <a 
-                            href={doc.path} 
-                            download
-                            className="ml-2 px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                          >
-                            Baixar
-                          </a>
+                          <div className="flex gap-2">
+                            <a 
+                              href={doc.path} 
+                              download
+                              className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                            >
+                              Baixar
+                            </a>
+                            <button
+                              onClick={() => handleDocDelete(doc.name)}
+                              className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
+                              title="Excluir documento"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -1360,13 +1408,24 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                       {documentos.map((doc, idx) => (
                         <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
                           <span className="text-gray-800 truncate flex-1">{doc.name}</span>
-                          <a 
-                            href={doc.path} 
-                            download
-                            className="ml-2 px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                          >
-                            Baixar
-                          </a>
+                          <div className="flex gap-2">
+                            <a 
+                              href={doc.path} 
+                              download
+                              className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                            >
+                              Baixar
+                            </a>
+                            <button
+                              onClick={() => handleDocDelete(doc.name)}
+                              className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
+                              title="Excluir documento"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
