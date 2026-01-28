@@ -527,9 +527,9 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         console.error('Erro ao destruir viewer:', e);
       }
     };
-  }, [bpmnUrl, descriptionsUrl, contentUrl]); // localEdits removido para não recarregar o diagrama
+  }, [bpmnUrl, descriptionsUrl, contentUrl]);
 
-  // Funções de edição
+  // Funcoes de edicao
   const handleStartEdit = () => {
     // Garantir que todos os campos de array existam
     const initialData = selected ? { 
