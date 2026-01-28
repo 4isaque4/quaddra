@@ -51,14 +51,15 @@ export async function GET(
       return false;
     });
 
+    // Se não encontrou pasta, pode ser um arquivo na raiz
+    let docsDir: string;
     if (!processFolder) {
-      // Se não encontrou pasta, pode ser arquivo na raiz - retornar vazio
-      console.log(`[Documents API] Processo não encontrado para slug: ${decodedSlug}`);
-      console.log(`[Documents API] Pastas disponíveis: ${folders.join(', ')}`);
-      return NextResponse.json({ documents: [], message: 'Pasta do processo não encontrada' });
+      console.log(`[Documents API] Arquivo na raiz detectado: ${decodedSlug}`);
+      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
+      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
+    } else {
+      docsDir = join(bpmnDir, processFolder, 'docs');
     }
-
-    const docsDir = join(bpmnDir, processFolder, 'docs');
 
     if (!existsSync(docsDir)) {
       return NextResponse.json({ documents: [] });
@@ -141,13 +142,19 @@ export async function POST(
       return false;
     });
 
+    // Se não encontrou pasta, pode ser um arquivo na raiz
+    let docsDir: string;
+    let githubPathPrefix: string;
+    
     if (!processFolder) {
-      console.log(`[Documents API POST] Processo não encontrado para slug: ${decodedSlug}`);
-      console.log(`[Documents API POST] Pastas disponíveis: ${folders.join(', ')}`);
-      return NextResponse.json({ error: `Processo não encontrado: ${decodedSlug}` }, { status: 404 });
+      console.log(`[Documents API POST] Arquivo na raiz detectado: ${decodedSlug}`);
+      // Usar pasta especial "_root_docs" para documentos de arquivos na raiz
+      docsDir = join(bpmnDir, '_root_docs', decodedSlug);
+      githubPathPrefix = `apps/api/storage/bpmn/_root_docs/${decodedSlug}`;
+    } else {
+      docsDir = join(bpmnDir, processFolder, 'docs');
+      githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
     }
-
-    const docsDir = join(bpmnDir, processFolder, 'docs');
 
     // Criar pasta docs se não existir
     if (!existsSync(docsDir)) {
@@ -169,7 +176,7 @@ export async function POST(
 
       if (token) {
         const octokit = new Octokit({ auth: token });
-        const githubPath = `apps/api/storage/bpmn/${processFolder}/docs/${file.name}`;
+        const githubPath = `${githubPathPrefix}/${file.name}`;
         const content = buffer.toString('base64');
 
         // Verificar se arquivo já existe
@@ -191,7 +198,7 @@ export async function POST(
           owner,
           repo,
           path: githubPath,
-          message: `docs: adicionar documento ${file.name} ao processo ${processFolder}`,
+          message: `docs: adicionar documento ${file.name} ao processo ${processFolder || decodedSlug}`,
           content,
           sha,
         });
