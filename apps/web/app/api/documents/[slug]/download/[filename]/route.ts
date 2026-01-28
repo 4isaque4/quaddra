@@ -23,26 +23,42 @@ export async function GET(
       return statSync(fullPath).isDirectory();
     });
 
+    // Normalizar slug para comparação
+    const normalizeStr = (str: string) => str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ç/g, 'c')
+      .replace(/Ç/g, 'C')
+      .replace(/\s+/g, '-')
+      .replace(/\//g, '-')
+      .toLowerCase();
+
+    const slugNormalized = normalizeStr(decodedSlug);
+
     const processFolder = folders.find(folder => {
-      const normalized = folder
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/ç/g, 'c')
-        .replace(/Ç/g, 'C')
-        .replace(/\s+/g, '-')
-        .replace(/\//g, '-')
-        .toLowerCase();
+      const folderNormalized = normalizeStr(folder);
       
-      return normalized === decodedSlug.toLowerCase() || 
-             folder === decodedSlug ||
-             decodedSlug.includes(normalized);
+      // Comparação direta
+      if (folder === decodedSlug) return true;
+      if (folderNormalized === slugNormalized) return true;
+      
+      // Comparação flexível (contém ou começa com)
+      if (folderNormalized.includes(slugNormalized)) return true;
+      if (slugNormalized.includes(folderNormalized)) return true;
+      
+      return false;
     });
 
+    // Se não encontrou pasta, pode ser um arquivo na raiz
+    let filePath: string;
+    
     if (!processFolder) {
-      return NextResponse.json({ error: 'Processo não encontrado' }, { status: 404 });
+      // Arquivo na raiz - usar pop-it/
+      filePath = join(bpmnDir, decodedSlug, 'pop-it', decodedFilename);
+    } else {
+      // Arquivo em pasta - usar docs/
+      filePath = join(bpmnDir, processFolder, 'docs', decodedFilename);
     }
-
-    const filePath = join(bpmnDir, processFolder, 'docs', decodedFilename);
 
     if (!existsSync(filePath)) {
       return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
