@@ -12,6 +12,7 @@ type BpmnViewerProps = {
 
 export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string>('');
   const [selected, setSelected] = useState<any>(null);
@@ -27,6 +28,60 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [documentos, setDocumentos] = useState<Array<{name: string, size: number, path: string}>>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+
+  // Extrair slug do processo do bpmnUrl
+  const processSlug = bpmnUrl.replace('/api/bpmn/', '').replace(/\//g, '-');
+
+  // Carregar documentos do processo
+  const loadDocumentos = async () => {
+    try {
+      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setDocumentos(data.documents || []);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar documentos:', e);
+    }
+  };
+
+  // Fazer upload de documento
+  const handleDocUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        loadDocumentos();
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao fazer upload:', e);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  // Carregar documentos quando o modal abrir
+  useEffect(() => {
+    if (showModal) {
+      loadDocumentos();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal]);
 
   // Debug: Log quando showModal muda
   useEffect(() => {
@@ -95,7 +150,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         
         // 3. Criar o viewer
         if (ref.current) {
-          currentViewer = new BpmnJS({
+          currentViewer = new (BpmnJS as any)({
             container: ref.current,
             textRenderer: {
               defaultStyle: {
@@ -888,6 +943,42 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                     )}
                   </ul>
                 </div>
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <p className="text-xs uppercase text-gray-500 mb-2" style={{ fontWeight: 400 }}>Documentos Anexados</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleDocUpload}
+                    className="hidden"
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
+                  />
+                  {documentos.length === 0 ? (
+                    <p className="text-sm text-gray-400 mb-3">Nenhum documento anexado</p>
+                  ) : (
+                    <ul className="text-sm space-y-2 mb-3">
+                      {documentos.map((doc, idx) => (
+                        <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                          <span className="text-gray-800 truncate flex-1">{doc.name}</span>
+                          <a 
+                            href={doc.path} 
+                            download
+                            className="ml-2 px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                          >
+                            Baixar
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingDoc}
+                    className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                  >
+                    {uploadingDoc ? 'Enviando...' : 'Anexar Documento'}
+                  </button>
+                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
+                </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Observações</p>
                   <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
@@ -1184,6 +1275,35 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                       (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
                     )}
                   </ul>
+                </div>
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Documentos Anexados</h3>
+                  {documentos.length === 0 ? (
+                    <p className="text-sm text-gray-400 mb-3">Nenhum documento anexado</p>
+                  ) : (
+                    <ul className="text-sm space-y-2 mb-3">
+                      {documentos.map((doc, idx) => (
+                        <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                          <span className="text-gray-800 truncate flex-1">{doc.name}</span>
+                          <a 
+                            href={doc.path} 
+                            download
+                            className="ml-2 px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                          >
+                            Baixar
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingDoc}
+                    className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                  >
+                    {uploadingDoc ? 'Enviando...' : 'Anexar Documento'}
+                  </button>
+                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
