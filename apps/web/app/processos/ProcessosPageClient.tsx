@@ -98,79 +98,75 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
     <>
       <Header />
       <main className="pt-20 min-h-screen bg-gray-50">
-        <div className="container py-16">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-              Processos BPMN
+        <div className="container py-12">
+          {/* Header simples e direto */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Processos
             </h1>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
-              Visualize e analise os processos de negócio da Quaddra
-            </p>
 
-            {/* Barra de Busca */}
-            <div className="max-w-2xl mx-auto mb-8">
+            {/* Barra de Busca compacta */}
+            <div className="max-w-xl">
               <input
                 type="text"
-                placeholder="Buscar por nome ou categoria..."
+                placeholder="Buscar..."
                 value={filtro}
                 onChange={(e) => setFiltro(e.target.value)}
-                className="w-full px-6 py-4 text-lg border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none transition-colors"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
               />
               {filtro && (
-                <p className="mt-2 text-gray-600">
-                  {processosFiltrados.length} processo(s) encontrado(s)
+                <p className="mt-2 text-sm text-gray-500">
+                  {processosFiltrados.length} resultado(s)
                 </p>
               )}
             </div>
           </div>
 
           {Object.keys(grupos).length === 0 ? (
-            <div className="text-center py-16">
-              <p className="text-xl text-gray-600">
+            <div className="py-12">
+              <p className="text-gray-500">
                 {filtro ? 'Nenhum processo encontrado' : 'Nenhum processo disponível'}
               </p>
             </div>
           ) : (
             Object.keys(grupos).sort().map((categoria) => (
-              <div key={categoria} className="mb-12">
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 border-b-2 border-orange-500 pb-2">
+              <div key={categoria} className="mb-10">
+                <h2 className="text-lg font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-200">
                   {categoria}
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {grupos[categoria].map((processo) => (
                     <div
                       key={processo.slug}
-                      className="bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+                      className="bg-white border border-gray-200 rounded-lg p-5 hover:border-orange-500 transition-colors"
                     >
-                      <div className="p-6">
-                        <h3 className="text-xl font-bold text-gray-900 mb-4">
-                          {processo.nome}
-                        </h3>
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/processos/${processo.slug}`}
-                            className="flex-1 inline-block bg-orange-500 hover:bg-orange-600 text-white text-center px-6 py-3 rounded-lg font-semibold transition-colors"
-                          >
-                            Ver Processo
-                          </Link>
-                          <button
-                            onClick={() => handleDeleteClick(processo)}
-                            disabled={deletando === processo.slug}
-                            className="px-4 py-3 bg-gray-200 hover:bg-orange-100 text-gray-700 hover:text-orange-600 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Deletar processo"
-                          >
-                            {deletando === processo.slug ? (
-                              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            ) : (
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            )}
-                          </button>
-                        </div>
+                      <h3 className="text-base font-semibold text-gray-900 mb-3">
+                        {processo.nome}
+                      </h3>
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/processos/${processo.slug}`}
+                          className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
+                        >
+                          Abrir
+                        </Link>
+                        <button
+                          onClick={() => handleDeleteClick(processo)}
+                          disabled={deletando === processo.slug}
+                          className="px-3 py-2 border border-gray-300 hover:border-orange-500 hover:text-orange-600 rounded transition-colors disabled:opacity-50"
+                          title="Deletar"
+                        >
+                          {deletando === processo.slug ? (
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -179,47 +175,31 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
             ))
           )}
 
-          <div className="text-center mt-16">
+          <div className="mt-12">
             <Link
               href="/"
-              className="inline-block bg-gray-600 hover:bg-gray-700 text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300"
+              className="inline-block text-gray-600 hover:text-orange-600 text-sm font-medium transition-colors"
             >
-              Voltar ao Início
+              ← Voltar
             </Link>
           </div>
         </div>
       </main>
       <Footer />
 
-      {/* Notificação Toast */}
+      {/* Notificação Toast - Minimalista */}
       {notificacao && (
         <div className="fixed top-24 right-4 z-50 animate-slide-in">
-          <div className={`rounded-lg shadow-2xl p-6 max-w-md ${
-            notificacao.tipo === 'sucesso' 
-              ? 'bg-orange-50 border-2 border-orange-500' 
-              : 'bg-orange-50 border-2 border-orange-500'
-          }`}>
-            <div className="flex items-start gap-4">
-              {notificacao.tipo === 'sucesso' ? (
-                <svg className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
+          <div className="bg-white border-l-4 border-orange-500 shadow-lg p-4 max-w-sm">
+            <div className="flex items-center gap-3">
               <div className="flex-1">
-                <p className="font-semibold text-gray-900">
-                  {notificacao.tipo === 'sucesso' ? 'Sucesso!' : 'Erro!'}
-                </p>
-                <p className="text-gray-700 mt-1">{notificacao.mensagem}</p>
+                <p className="text-sm font-medium text-gray-900">{notificacao.mensagem}</p>
               </div>
               <button
                 onClick={() => setNotificacao(null)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -228,31 +208,31 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
         </div>
       )}
 
-      {/* Modal de Confirmação */}
+      {/* Modal de Confirmação - Minimalista */}
       {processoADeletar && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8">
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">
-              Confirmar Deleção
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Deletar processo?
             </h3>
-            <p className="text-gray-600 mb-6">
-              Tem certeza que deseja deletar o processo <strong>&quot;{processoADeletar.nome}&quot;</strong>?
+            <p className="text-sm text-gray-600 mb-4">
+              <strong>{processoADeletar.nome}</strong>
             </p>
-            <p className="text-sm text-gray-500 mb-6">
-              Esta ação irá deletar o processo do site e do GitHub. Esta ação não pode ser desfeita.
+            <p className="text-xs text-gray-500 mb-6">
+              Esta ação não pode ser desfeita.
             </p>
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <button
                 onClick={() => setProcessoADeletar(null)}
                 disabled={!!deletando}
-                className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-semibold transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded text-sm font-medium transition-colors disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleConfirmDelete}
                 disabled={!!deletando}
-                className="flex-1 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm font-medium transition-colors disabled:opacity-50"
               >
                 {deletando ? 'Deletando...' : 'Deletar'}
               </button>
