@@ -1,6 +1,4 @@
-import Link from 'next/link'
-import { Header, Footer } from '@/components'
-import ProcessCard from '@/components/ProcessCard'
+import ProcessosPageClient from './ProcessosPageClient'
 import { readdirSync, existsSync, statSync } from 'fs'
 import { join, relative } from 'path'
 
@@ -40,16 +38,10 @@ interface ProcessoItem {
   file: string
   slug: string
   nome: string
-  bpmnUrl: string
-  descriptionsUrl: string
-}
-
-interface ProcessoGrupo {
   categoria: string
-  processos: ProcessoItem[]
 }
 
-function getProcessos(): ProcessoGrupo[] {
+function getProcessos(): ProcessoItem[] {
   try {
     const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
     
@@ -59,10 +51,7 @@ function getProcessos(): ProcessoGrupo[] {
     
     const files = getAllBpmnFiles(bpmnDir, bpmnDir)
     
-    // Agrupar por pasta/categoria
-    const grupos: { [key: string]: ProcessoItem[] } = {}
-    
-    files.forEach(({ path, name }) => {
+    return files.map(({ path, name }) => {
       const slug = normalizeSlug(path.replace(/\.bpmn$/i, ''))
       const pathParts = path.split('/')
       
@@ -72,26 +61,13 @@ function getProcessos(): ProcessoGrupo[] {
         categoria = pathParts[0] // Nome da pasta
       }
       
-      if (!grupos[categoria]) {
-        grupos[categoria] = []
-      }
-      
-      grupos[categoria].push({
+      return {
         file: path,
         slug,
         nome: name.replace(/\.bpmn$/i, ''),
-        bpmnUrl: `/api/bpmn/${encodeURIComponent(slug)}`,
-        descriptionsUrl: '/api/descriptions'
-      })
-    })
-    
-    // Converter para array e ordenar
-    return Object.keys(grupos)
-      .sort()
-      .map(categoria => ({
-        categoria,
-        processos: grupos[categoria].sort((a, b) => a.nome.localeCompare(b.nome))
-      }))
+        categoria
+      }
+    }).sort((a, b) => a.nome.localeCompare(b.nome))
   } catch (error) {
     console.error('Erro ao buscar processos:', error)
     return []
@@ -99,50 +75,7 @@ function getProcessos(): ProcessoGrupo[] {
 }
 
 export default function ProcessosPage() {
-  const grupos = getProcessos()
-
-  return (
-    <>
-      <Header />
-      <main className="pt-20 min-h-screen bg-gray-50">
-        <div className="container py-16">
-          <div className="text-center mb-16">
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-              Processos BPMN
-            </h1>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Visualize e analise os processos de negócio da Quaddra
-            </p>
-          </div>
-
-          {grupos.map((grupo) => (
-            <div key={grupo.categoria} className="mb-12">
-              <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 border-b-2 border-orange-500 pb-2">
-                {grupo.categoria}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {grupo.processos.map((processo) => (
-                  <ProcessCard
-                    key={processo.slug}
-                    slug={processo.slug}
-                    nome={processo.nome}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <div className="text-center mt-16">
-            <Link 
-              href="/"
-              className="inline-block bg-gray-600 hover:bg-gray-700 text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300"
-            >
-              Voltar ao Início
-            </Link>
-          </div>
-        </div>
-      </main>
-      <Footer />
-    </>
-  )
+  const processos = getProcessos()
+  
+  return <ProcessosPageClient processosIniciais={processos} />
 }
