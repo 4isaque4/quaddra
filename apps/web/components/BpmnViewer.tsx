@@ -145,7 +145,13 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     }
   };
 
-  // Carregar documentos quando o modal abrir
+  // Carregar documentos quando o componente montar
+  useEffect(() => {
+    loadDocumentos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recarregar documentos quando o modal abrir
   useEffect(() => {
     if (showModal) {
       loadDocumentos();
