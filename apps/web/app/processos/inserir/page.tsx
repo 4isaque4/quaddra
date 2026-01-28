@@ -245,7 +245,7 @@ export default function InserirProcessoPage() {
               <li>2. Selecione o arquivo BPMN principal (obrigatório)</li>
               <li>3. Adicione subdiagramas se houver (opcional)</li>
               <li>4. Adicione documentos POP/IT se houver (opcional)</li>
-              <li>5. Clique em "Inserir Processo"</li>
+              <li>5. Clique em &quot;Inserir Processo&quot;</li>
               <li>6. O processo será enviado para o GitHub e aparecerá automaticamente no site!</li>
             </ol>
           </div>
