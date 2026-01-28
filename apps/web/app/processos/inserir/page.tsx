@@ -59,7 +59,7 @@ export default function InserirProcessoPage() {
       }
 
       setMensagem(
-        `✅ Processo "${formData.nomeProcesso}" inserido com sucesso! ` +
+        `Processo "${formData.nomeProcesso}" inserido com sucesso! ` +
         `Total de arquivos: ${result.totalArquivos}`
       );
 
@@ -114,7 +114,7 @@ export default function InserirProcessoPage() {
 
           {erro && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800 font-medium">❌ {erro}</p>
+              <p className="text-red-800 font-medium">{erro}</p>
             </div>
           )}
 
@@ -206,13 +206,13 @@ export default function InserirProcessoPage() {
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Arquivos Selecionados:</h3>
                 <ul className="space-y-1 text-sm text-gray-600">
                   {formData.arquivoBpmn && (
-                    <li>📄 BPMN Principal: {formData.arquivoBpmn.name}</li>
+                    <li>BPMN Principal: {formData.arquivoBpmn.name}</li>
                   )}
                   {formData.subdiagramas.length > 0 && (
-                    <li>📁 Subdiagramas: {formData.subdiagramas.length} arquivo(s)</li>
+                    <li>Subdiagramas: {formData.subdiagramas.length} arquivo(s)</li>
                   )}
                   {formData.documentos.length > 0 && (
-                    <li>📎 Documentos: {formData.documentos.length} arquivo(s)</li>
+                    <li>Documentos: {formData.documentos.length} arquivo(s)</li>
                   )}
                 </ul>
               </div>
@@ -225,7 +225,7 @@ export default function InserirProcessoPage() {
                 disabled={loading}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                {loading ? '⏳ Enviando...' : '🚀 Inserir Processo'}
+                {loading ? 'Enviando...' : 'Inserir Processo'}
               </button>
 
               <Link
@@ -239,14 +239,14 @@ export default function InserirProcessoPage() {
 
           {/* Informações */}
           <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h3 className="text-lg font-bold text-blue-900 mb-3">ℹ️ Como funciona:</h3>
+            <h3 className="text-lg font-bold text-blue-900 mb-3">Como funciona:</h3>
             <ol className="space-y-2 text-blue-800">
               <li>1. Preencha o nome do processo</li>
               <li>2. Selecione o arquivo BPMN principal (obrigatório)</li>
               <li>3. Adicione subdiagramas se houver (opcional)</li>
               <li>4. Adicione documentos POP/IT se houver (opcional)</li>
               <li>5. Clique em "Inserir Processo"</li>
-              <li>6. ✅ O processo será enviado para o GitHub e aparecerá automaticamente no site!</li>
+              <li>6. O processo será enviado para o GitHub e aparecerá automaticamente no site!</li>
             </ol>
           </div>
         </div>

@@ -1,6 +1,4 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/processos/page": "app/processos/page.js",
-  "/processos/[slug]/page": "app/processos/[slug]/page.js",
-  "/api/sync-github/route": "app/api/sync-github/route.js"
+  "/processos/inserir/page": "app/processos/inserir/page.js",
+  "/page": "app/page.js"
 }

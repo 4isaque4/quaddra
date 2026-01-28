@@ -19,12 +19,14 @@ export default function Header() {
     <header className="bg-white shadow-sm fixed top-0 left-0 w-full z-50 h-20">
       <nav className="container flex justify-between items-center h-full">
         <Link href="/" className="logo" onClick={closeMenu}>
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">Q</span>
-            </div>
-            <span className="text-2xl font-bold text-gray-800">QUADDRA</span>
-          </div>
+          <Image 
+            src="/logo.png" 
+            alt="Quaddra" 
+            width={180} 
+            height={40}
+            priority
+            className="h-10 w-auto"
+          />
         </Link>
         
         <ul className={`nav-links ${isMenuOpen ? 'left-0' : '-left-full'} lg:static lg:flex lg:flex-row lg:bg-transparent lg:shadow-none lg:h-auto lg:w-auto lg:gap-8`}>

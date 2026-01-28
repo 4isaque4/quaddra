@@ -174,7 +174,7 @@ export async function POST(request: Request) {
         sha: newCommit.sha,
       });
 
-      console.log('[UPLOAD] ✅ Push para GitHub concluído!');
+      console.log('[UPLOAD] Push para GitHub concluído!');
     } catch (gitError: any) {
       console.error('[UPLOAD] Erro ao fazer push no GitHub:', gitError);
       throw new Error(`Erro ao enviar para GitHub: ${gitError.message}`);

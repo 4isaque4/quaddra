@@ -102,7 +102,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         }
         
         // 3. Criar o viewer
-        console.log('🔧 Criando viewer BPMN...');
+        console.log('[BPMN] Criando viewer BPMN...');
         if (ref.current) {
           currentViewer = new BpmnJS({
             container: ref.current
