@@ -35,7 +35,7 @@ export default function Header() {
           <li><Link href="/#services" className="nav-link" onClick={closeMenu}>Serviços</Link></li>
           <li><Link href="/#about" className="nav-link" onClick={closeMenu}>Sobre Nós</Link></li>
           <li><Link href="/processos" className="nav-link" onClick={closeMenu}>Processos</Link></li>
-          <li><Link href="/processos/inserir" className="nav-link text-orange-600 font-semibold" onClick={closeMenu}>Inserir Processos</Link></li>
+          <li><Link href="/processos/inserir" className="nav-link" onClick={closeMenu}>Inserir Processos</Link></li>
           <li><Link href="/#contact" className="nav-link" onClick={closeMenu}>Contato</Link></li>
         </ul>
         
