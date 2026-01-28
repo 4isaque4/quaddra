@@ -15,7 +15,7 @@ export default function Contact() {
     setStatus('Mensagem enviada com sucesso! Entraremos em contato em breve.')
     
     // Aqui você pode adicionar a lógica para enviar o formulário
-    console.log('Formulário enviado:', formData)
+    // console.log('Formulário enviado:', formData)
     
     // Limpar formulário
     setFormData({ name: '', email: '', message: '' })
