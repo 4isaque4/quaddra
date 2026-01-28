@@ -497,17 +497,19 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               throw new Error('Não foi possível carregar o XML para fallback');
             }
           } catch (fallbackError) {
-            ref.current.innerHTML = `<div style="padding:20px;color:#f55;text-align:center;">
-              <h3>Erro ao carregar BPMN</h3>
-              <p>${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
-              <p><strong>Erro no fallback:</strong> ${fallbackError instanceof Error ? fallbackError.message : 'N/A'}</p>
-              <details style="margin-top:10px;text-align:left;max-width:500px;margin:10px auto;">
-                <summary>Detalhes técnicos</summary>
-                <p><strong>URL BPMN:</strong> ${bpmnUrl}</p>
-                <p><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
-                <p><strong>Erro:</strong> ${err instanceof Error ? err.stack : 'N/A'}</p>
-              </details>
-            </div>`;
+            if (ref.current) {
+              ref.current.innerHTML = `<div style="padding:20px;color:#f55;text-align:center;">
+                <h3>Erro ao carregar BPMN</h3>
+                <p>${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
+                <p><strong>Erro no fallback:</strong> ${fallbackError instanceof Error ? fallbackError.message : 'N/A'}</p>
+                <details style="margin-top:10px;text-align:left;max-width:500px;margin:10px auto;">
+                  <summary>Detalhes técnicos</summary>
+                  <p><strong>URL BPMN:</strong> ${bpmnUrl}</p>
+                  <p><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
+                  <p><strong>Erro:</strong> ${err instanceof Error ? err.stack : 'N/A'}</p>
+                </details>
+              </div>`;
+            }
           }
         }
       }
@@ -710,12 +712,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   if (error) {
     return (
-      <div className="w-full p-6 bg-red-50 border border-red-200 rounded-lg">
-        <h3 className="text-lg font-semibold text-red-800 mb-2">Erro ao carregar BPMN</h3>
-        <p className="text-red-700 mb-4">{error}</p>
+      <div className="w-full p-6 bg-orange-50 border border-orange-300 rounded-lg">
+        <h3 className="text-lg font-semibold text-orange-800 mb-2">Erro ao carregar BPMN</h3>
+        <p className="text-orange-700 mb-4">{error}</p>
         <button 
           onClick={() => window.location.reload()} 
-          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
         >
           Tentar Novamente
         </button>

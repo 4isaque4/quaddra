@@ -76,7 +76,7 @@ export default function Contact() {
         </form>
         
         {status && (
-          <p className="mt-6 text-green-600 font-semibold">
+          <p className="mt-6 text-orange-600 font-semibold">
             {status}
           </p>
         )}

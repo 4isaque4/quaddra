@@ -107,14 +107,14 @@ export default function InserirProcessoPage() {
 
           {/* Mensagens */}
           {mensagem && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-              <p className="text-green-800 font-medium">{mensagem}</p>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
+              <p className="text-orange-800 font-medium">{mensagem}</p>
             </div>
           )}
 
           {erro && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800 font-medium">{erro}</p>
+            <div className="bg-orange-50 border border-orange-300 rounded-lg p-4 mb-6">
+              <p className="text-orange-800 font-medium">{erro}</p>
             </div>
           )}
 
@@ -238,9 +238,9 @@ export default function InserirProcessoPage() {
           </form>
 
           {/* Informações */}
-          <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h3 className="text-lg font-bold text-blue-900 mb-3">Como funciona:</h3>
-            <ol className="space-y-2 text-blue-800">
+          <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-3">Como funciona:</h3>
+            <ol className="space-y-2 text-gray-800">
               <li>1. Preencha o nome do processo</li>
               <li>2. Selecione o arquivo BPMN principal (obrigatório)</li>
               <li>3. Adicione subdiagramas se houver (opcional)</li>
