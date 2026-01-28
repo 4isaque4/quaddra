@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Header, Footer } from '@/components';
 
@@ -15,11 +15,17 @@ interface ProcessosPageClientProps {
   processosIniciais: ProcessoItem[];
 }
 
+interface Notificacao {
+  tipo: 'sucesso' | 'erro';
+  mensagem: string;
+}
+
 export default function ProcessosPageClient({ processosIniciais }: ProcessosPageClientProps) {
   const [processos, setProcessos] = useState<ProcessoItem[]>(processosIniciais);
   const [filtro, setFiltro] = useState('');
   const [deletando, setDeletando] = useState<string | null>(null);
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
+  const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
 
   // Filtrar processos
   const processosFiltrados = processos.filter(p =>
@@ -38,6 +44,20 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
 
   const handleDeleteClick = (processo: ProcessoItem) => {
     setProcessoADeletar(processo);
+  };
+
+  // Auto-fechar notificação após 5 segundos
+  useEffect(() => {
+    if (notificacao) {
+      const timer = setTimeout(() => {
+        setNotificacao(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notificacao]);
+
+  const mostrarNotificacao = (tipo: 'sucesso' | 'erro', mensagem: string) => {
+    setNotificacao({ tipo, mensagem });
   };
 
   const handleConfirmDelete = async () => {
@@ -60,10 +80,10 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
       setProcessos(processos.filter(p => p.slug !== processoADeletar.slug));
       setProcessoADeletar(null);
       
-      alert('Processo deletado com sucesso!');
+      mostrarNotificacao('sucesso', `Processo "${processoADeletar.nome}" deletado com sucesso!`);
     } catch (error: any) {
       console.error('Erro ao deletar:', error);
-      alert(error.message || 'Erro ao deletar processo');
+      mostrarNotificacao('erro', error.message || 'Erro ao deletar processo');
     } finally {
       setDeletando(null);
     }
@@ -165,6 +185,43 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
         </div>
       </main>
       <Footer />
+
+      {/* Notificação Toast */}
+      {notificacao && (
+        <div className="fixed top-24 right-4 z-50 animate-slide-in">
+          <div className={`rounded-lg shadow-2xl p-6 max-w-md ${
+            notificacao.tipo === 'sucesso' 
+              ? 'bg-orange-50 border-2 border-orange-500' 
+              : 'bg-orange-50 border-2 border-orange-500'
+          }`}>
+            <div className="flex items-start gap-4">
+              {notificacao.tipo === 'sucesso' ? (
+                <svg className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+              <div className="flex-1">
+                <p className="font-semibold text-gray-900">
+                  {notificacao.tipo === 'sucesso' ? 'Sucesso!' : 'Erro!'}
+                </p>
+                <p className="text-gray-700 mt-1">{notificacao.mensagem}</p>
+              </div>
+              <button
+                onClick={() => setNotificacao(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Confirmação */}
       {processoADeletar && (
