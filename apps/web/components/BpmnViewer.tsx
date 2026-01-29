@@ -274,7 +274,27 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             return;
           }
           
-          await currentViewer.importXML(xml);
+          // Importar XML e silenciar warnings de DataObject (problema do Bizagi)
+          try {
+            const result = await currentViewer.importXML(xml);
+            if (result.warnings && result.warnings.length > 0) {
+              // Filtrar apenas warnings críticos (não os de DataObject)
+              const criticalWarnings = result.warnings.filter((w: any) => 
+                !w.message?.includes('DataObject') && 
+                !w.message?.includes('not yet drawn')
+              );
+              if (criticalWarnings.length > 0) {
+                console.warn('[BPMN] Avisos ao importar:', criticalWarnings);
+              }
+            }
+          } catch (importError: any) {
+            // Ignorar erros de DataObject que não impedem renderização
+            if (!importError.message?.includes('DataObject') && 
+                !importError.message?.includes('not yet drawn')) {
+              throw importError;
+            }
+            console.warn('[BPMN] Aviso ignorado (DataObject):', importError.message);
+          }
           try {
             const canvas = currentViewer.get('canvas');
             if (canvas && canvas.zoom) {
@@ -288,6 +308,22 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           eventBus = currentViewer.get('eventBus');
           canvas = currentViewer.get('canvas');
           elementRegistry = currentViewer.get('elementRegistry');
+
+          // Interceptar erros de importação relacionados a DataObject (silenciar no console)
+          if (typeof window !== 'undefined' && !(window as any).__originalConsoleError) {
+            (window as any).__originalConsoleError = console.error;
+          }
+          const originalConsoleError = (window as any).__originalConsoleError || console.error;
+          const silencedErrors = ['DataObject', 'not yet drawn', 'Association'];
+          (console as any).error = function(...args: any[]) {
+            const message = args.join(' ');
+            const shouldSilence = silencedErrors.some(keyword => 
+              message.includes(keyword) && message.includes('failed to import')
+            );
+            if (!shouldSilence) {
+              originalConsoleError.apply(console, args);
+            }
+          };
 
           // Função para limitar linhas de texto nos labels
           const clampLabelText = () => {
@@ -727,6 +763,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         }
       } catch (e) {
         console.error('Erro ao destruir viewer:', e);
+      }
+      
+      // Restaurar console.error original ao desmontar
+      if (typeof window !== 'undefined' && (window as any).__originalConsoleError) {
+        console.error = (window as any).__originalConsoleError;
       }
     };
   }, [bpmnUrl, descriptionsUrl, contentUrl]);
