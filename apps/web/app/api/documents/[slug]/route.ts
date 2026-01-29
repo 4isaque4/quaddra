@@ -12,6 +12,11 @@ function findFilesRecursive(dir: string, baseDir: string): Array<{name: string, 
   const items = readdirSync(dir);
   
   for (const item of items) {
+    // Filtrar arquivos ocultos e .gitkeep
+    if (item.startsWith('.') || item === '.gitkeep') {
+      continue;
+    }
+    
     const fullPath = join(dir, item);
     const stat = statSync(fullPath);
     
