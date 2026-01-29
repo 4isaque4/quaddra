@@ -49,18 +49,23 @@ export async function GET(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz
-    let filePath: string;
+    // Procurar o arquivo em docs/ ou pop-it/
+    const processFolderName = processFolder || decodedSlug;
     
-    if (!processFolder) {
-      // Arquivo na raiz - usar pop-it/
-      filePath = join(bpmnDir, decodedSlug, 'pop-it', decodedFilename);
-    } else {
-      // Arquivo em pasta - usar docs/
-      filePath = join(bpmnDir, processFolder, 'docs', decodedFilename);
+    const possiblePaths = [
+      join(bpmnDir, processFolderName, 'docs', decodedFilename),
+      join(bpmnDir, processFolderName, 'pop-it', decodedFilename)
+    ];
+
+    let filePath: string | null = null;
+    for (const path of possiblePaths) {
+      if (existsSync(path)) {
+        filePath = path;
+        break;
+      }
     }
 
-    if (!existsSync(filePath)) {
+    if (!filePath) {
       return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
     }
 

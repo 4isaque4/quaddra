@@ -52,10 +52,19 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   // Carregar documentos do processo
   const loadDocumentos = async () => {
     try {
+      console.log('[BpmnViewer] Carregando documentos para slug:', processSlug);
+      console.log('[BpmnViewer] URL:', `/api/documents/${encodeURIComponent(processSlug)}`);
+      
       const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`);
+      const data = await response.json();
+      
+      console.log('[BpmnViewer] Resposta da API:', data);
+      
       if (response.ok) {
-        const data = await response.json();
         setDocumentos(data.documents || []);
+        console.log('[BpmnViewer] Documentos carregados:', data.documents?.length || 0);
+      } else {
+        console.warn('[BpmnViewer] Erro na resposta:', data);
       }
     } catch (e) {
       console.warn('Erro ao carregar documentos:', e);
