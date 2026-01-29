@@ -32,6 +32,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [docNotificacao, setDocNotificacao] = useState<{tipo: 'sucesso' | 'erro', msg: string} | null>(null);
   const [showAnexosPanel, setShowAnexosPanel] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<string | null>(null);
 
   // Extrair slug do processo do bpmnUrl
   // bpmnUrl pode ser: /api/bpmn/VS_1_ProcessoComercial_Cliente/Comercial%20AS%20IS%20v2.0
@@ -118,10 +119,22 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     }
   };
 
-  // Deletar documento
-  const handleDocDelete = async (filename: string) => {
-    if (!confirm(`Deseja realmente excluir "${filename}"?`)) return;
+  // Confirmar exclusão de documento
+  const confirmDocDelete = (filename: string) => {
+    setDocToDelete(filename);
+  };
 
+  // Cancelar exclusão
+  const cancelDocDelete = () => {
+    setDocToDelete(null);
+  };
+
+  // Deletar documento
+  const handleDocDelete = async () => {
+    if (!docToDelete) return;
+
+    const filename = docToDelete;
+    setDocToDelete(null);
     setDocNotificacao(null);
     
     try {
@@ -1018,7 +1031,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                           Baixar
                         </a>
                         <button
-                          onClick={() => handleDocDelete(doc.name)}
+                          onClick={() => confirmDocDelete(doc.name)}
                           className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
                           title="Excluir documento"
                         >
@@ -1055,6 +1068,41 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 )}
               </button>
               <p className="text-xs text-gray-400 text-center mt-2">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
+            </div>
+          )}
+
+          {/* Modal de Confirmação de Exclusão */}
+          {docToDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900">Excluir documento?</h3>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Tem certeza que deseja excluir <strong>&quot;{docToDelete}&quot;</strong>? Esta ação não pode ser desfeita.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={cancelDocDelete}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleDocDelete}
+                    className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
