@@ -31,6 +31,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [documentos, setDocumentos] = useState<Array<{name: string, size: number, path: string}>>([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [docNotificacao, setDocNotificacao] = useState<{tipo: 'sucesso' | 'erro', msg: string} | null>(null);
+  const [showAnexosPanel, setShowAnexosPanel] = useState(false);
 
   // Extrair slug do processo do bpmnUrl
   // bpmnUrl pode ser: /api/bpmn/VS_1_ProcessoComercial_Cliente/Comercial%20AS%20IS%20v2.0
@@ -920,6 +921,133 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           <div className="mt-3 text-xs text-gray-500 text-center">
             <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
           </div>
+
+          {/* Botão de Anexos do Processo */}
+          <div className="mt-4">
+            <button
+              onClick={() => setShowAnexosPanel(!showAnexosPanel)}
+              className="w-full px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              Anexos do Processo
+              {documentos.length > 0 && (
+                <span className="bg-white text-orange-600 px-2 py-0.5 rounded-full text-xs font-semibold">
+                  {documentos.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Painel de Anexos */}
+          {showAnexosPanel && (
+            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-base font-semibold text-gray-900">Anexos do Processo</h3>
+                <button
+                  onClick={() => setShowAnexosPanel(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Notificação de upload */}
+              {docNotificacao && (
+                <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
+                  docNotificacao.tipo === 'sucesso' 
+                    ? 'bg-orange-50 text-orange-800 border border-orange-200' 
+                    : 'bg-gray-100 text-gray-700 border border-gray-300'
+                }`}>
+                  {docNotificacao.tipo === 'sucesso' ? (
+                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  )}
+                  <span>{docNotificacao.msg}</span>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleDocUpload}
+                className="hidden"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
+              />
+
+              {documentos.length === 0 ? (
+                <div className="text-center py-8">
+                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-sm text-gray-500 mb-4">Nenhum anexo neste processo</p>
+                </div>
+              ) : (
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {documentos.map((doc, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <svg className="w-5 h-5 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-sm text-gray-800 truncate">{doc.name}</span>
+                      </div>
+                      <div className="flex gap-2 ml-2">
+                        <a 
+                          href={doc.path} 
+                          download
+                          className="px-3 py-1.5 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                        >
+                          Baixar
+                        </a>
+                        <button
+                          onClick={() => handleDocDelete(doc.name)}
+                          className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
+                          title="Excluir documento"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingDoc}
+                className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {uploadingDoc ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Anexar Documento
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
+            </div>
+          )}
         </div>
 
         {/* Painel lateral */}
@@ -1018,74 +1146,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                       (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
                     )}
                   </ul>
-                </div>
-                <div className="border-t border-gray-200 pt-4 mt-4">
-                  <p className="text-xs uppercase text-gray-500 mb-2" style={{ fontWeight: 400 }}>Documentos Anexados</p>
-                  
-                  {/* Notificação de upload */}
-                  {docNotificacao && (
-                    <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
-                      docNotificacao.tipo === 'sucesso' 
-                        ? 'bg-orange-50 text-orange-800 border border-orange-200' 
-                        : 'bg-gray-100 text-gray-700 border border-gray-300'
-                    }`}>
-                      {docNotificacao.tipo === 'sucesso' ? (
-                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                      )}
-                      <span>{docNotificacao.msg}</span>
-                    </div>
-                  )}
-                  
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleDocUpload}
-                    className="hidden"
-                    accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
-                  />
-                  {documentos.length === 0 ? (
-                    <p className="text-sm text-gray-400 mb-3">Nenhum documento anexado</p>
-                  ) : (
-                    <ul className="text-sm space-y-2 mb-3">
-                      {documentos.map((doc, idx) => (
-                        <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                          <span className="text-gray-800 truncate flex-1">{doc.name}</span>
-                          <div className="flex gap-2">
-                            <a 
-                              href={doc.path} 
-                              download
-                              className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                            >
-                              Baixar
-                            </a>
-                            <button
-                              onClick={() => handleDocDelete(doc.name)}
-                              className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
-                              title="Excluir documento"
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingDoc}
-                    className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-                  >
-                    {uploadingDoc ? 'Enviando...' : 'Anexar Documento'}
-                  </button>
-                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Observações</p>
@@ -1383,67 +1443,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                       (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
                     )}
                   </ul>
-                </div>
-                <div className="border-t border-gray-200 pt-4 mt-4">
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Documentos Anexados</h3>
-                  
-                  {/* Notificação de upload */}
-                  {docNotificacao && (
-                    <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
-                      docNotificacao.tipo === 'sucesso' 
-                        ? 'bg-orange-50 text-orange-800 border border-orange-200' 
-                        : 'bg-gray-100 text-gray-700 border border-gray-300'
-                    }`}>
-                      {docNotificacao.tipo === 'sucesso' ? (
-                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                      )}
-                      <span>{docNotificacao.msg}</span>
-                    </div>
-                  )}
-                  
-                  {documentos.length === 0 ? (
-                    <p className="text-sm text-gray-400 mb-3">Nenhum documento anexado</p>
-                  ) : (
-                    <ul className="text-sm space-y-2 mb-3">
-                      {documentos.map((doc, idx) => (
-                        <li key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                          <span className="text-gray-800 truncate flex-1">{doc.name}</span>
-                          <div className="flex gap-2">
-                            <a 
-                              href={doc.path} 
-                              download
-                              className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                            >
-                              Baixar
-                            </a>
-                            <button
-                              onClick={() => handleDocDelete(doc.name)}
-                              className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
-                              title="Excluir documento"
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingDoc}
-                    className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-                  >
-                    {uploadingDoc ? 'Enviando...' : 'Anexar Documento'}
-                  </button>
-                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
