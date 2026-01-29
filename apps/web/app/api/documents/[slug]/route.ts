@@ -1,7 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { existsSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { Octokit } from '@octokit/rest';
+
+// Função auxiliar para buscar arquivos recursivamente
+function findFilesRecursive(dir: string, baseDir: string): Array<{name: string, fullPath: string, relativePath: string}> {
+  const results: Array<{name: string, fullPath: string, relativePath: string}> = [];
+  
+  if (!existsSync(dir)) return results;
+  
+  const items = readdirSync(dir);
+  
+  for (const item of items) {
+    const fullPath = join(dir, item);
+    const stat = statSync(fullPath);
+    
+    if (stat.isDirectory()) {
+      // Buscar recursivamente em subpastas
+      results.push(...findFilesRecursive(fullPath, baseDir));
+    } else if (stat.isFile()) {
+      const relativePath = relative(baseDir, fullPath).replace(/\\/g, '/');
+      results.push({
+        name: item,
+        fullPath,
+        relativePath
+      });
+    }
+  }
+  
+  return results;
+}
 
 // GET: Listar documentos de um processo
 export async function GET(
@@ -69,19 +97,16 @@ export async function GET(
       return NextResponse.json({ documents: [] });
     }
 
-    const files = readdirSync(docsDir).filter(f => {
-      const fullPath = join(docsDir, f);
-      return statSync(fullPath).isFile();
-    });
+    // Buscar arquivos recursivamente em subpastas
+    const files = findFilesRecursive(docsDir, docsDir);
 
     const documents = files.map(file => {
-      const fullPath = join(docsDir, file);
-      const stats = statSync(fullPath);
+      const stats = statSync(file.fullPath);
       return {
-        name: file,
+        name: file.relativePath, // Nome com caminho relativo (ex: "geral/arquivo.pdf")
         size: stats.size,
         modified: stats.mtime.toISOString(),
-        path: `/api/documents/${slug}/download/${encodeURIComponent(file)}`
+        path: `/api/documents/${slug}/download/${encodeURIComponent(file.relativePath)}`
       };
     });
 
