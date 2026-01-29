@@ -80,27 +80,35 @@ export async function GET(
     });
 
     // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
-    let docsDir: string;
     let processFolderName: string;
     
     if (!processFolder) {
-      console.log(`[Documents API] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Criar pasta com o nome do processo diretamente na raiz
+      console.log(`[Documents API GET] Arquivo na raiz detectado: ${decodedSlug}`);
       processFolderName = decodedSlug;
-      docsDir = join(bpmnDir, processFolderName, 'pop-it');
     } else {
+      console.log(`[Documents API GET] Pasta encontrada: ${processFolder}`);
       processFolderName = processFolder;
-      docsDir = join(bpmnDir, processFolder, 'docs');
     }
 
-    if (!existsSync(docsDir)) {
-      return NextResponse.json({ documents: [] });
+    // Buscar em docs/ e pop-it/
+    const docsDirs = [
+      join(bpmnDir, processFolderName, 'docs'),
+      join(bpmnDir, processFolderName, 'pop-it')
+    ];
+
+    console.log(`[Documents API GET] Buscando em:`, docsDirs);
+
+    let allFiles: Array<{name: string, fullPath: string, relativePath: string}> = [];
+
+    for (const docsDir of docsDirs) {
+      if (existsSync(docsDir)) {
+        const files = findFilesRecursive(docsDir, docsDir);
+        allFiles.push(...files);
+        console.log(`[Documents API GET] Encontrados ${files.length} arquivos em ${docsDir}`);
+      }
     }
 
-    // Buscar arquivos recursivamente em subpastas
-    const files = findFilesRecursive(docsDir, docsDir);
-
-    const documents = files.map(file => {
+    const documents = allFiles.map(file => {
       const stats = statSync(file.fullPath);
       return {
         name: file.relativePath, // Nome com caminho relativo (ex: "geral/arquivo.pdf")
@@ -110,6 +118,7 @@ export async function GET(
       };
     });
 
+    console.log(`[Documents API GET] Total de documentos: ${documents.length}`);
     return NextResponse.json({ documents });
   } catch (error) {
     console.error('Erro ao listar documentos:', error);
@@ -312,26 +321,28 @@ export async function DELETE(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
-    let docsDir: string;
-    let githubPathPrefix: string;
-    let processFolderName: string;
+    // Procurar o arquivo em docs/ ou pop-it/
+    const processFolderName = processFolder || decodedSlug;
     
-    if (!processFolder) {
-      console.log(`[Documents API DELETE] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Criar pasta com o nome do processo diretamente na raiz, subpasta pop-it
-      processFolderName = decodedSlug;
-      docsDir = join(bpmnDir, processFolderName, 'pop-it');
-      githubPathPrefix = `apps/api/storage/bpmn/${processFolderName}/pop-it`;
-    } else {
-      processFolderName = processFolder;
-      docsDir = join(bpmnDir, processFolder, 'docs');
-      githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
+    const possiblePaths = [
+      { dir: 'docs', path: join(bpmnDir, processFolderName, 'docs', filename), githubPrefix: `apps/api/storage/bpmn/${processFolderName}/docs` },
+      { dir: 'pop-it', path: join(bpmnDir, processFolderName, 'pop-it', filename), githubPrefix: `apps/api/storage/bpmn/${processFolderName}/pop-it` }
+    ];
+
+    let filePath: string | null = null;
+    let githubPathPrefix: string = '';
+    
+    for (const option of possiblePaths) {
+      if (existsSync(option.path)) {
+        filePath = option.path;
+        githubPathPrefix = option.githubPrefix;
+        console.log(`[Documents API DELETE] Arquivo encontrado em ${option.dir}:`, filePath);
+        break;
+      }
     }
 
-    const filePath = join(docsDir, filename);
-
-    if (!existsSync(filePath)) {
+    if (!filePath) {
+      console.log(`[Documents API DELETE] Arquivo não encontrado: ${filename}`);
       return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
     }
 
