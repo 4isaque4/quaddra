@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { Octokit } from '@octokit/rest';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { parseBizagiBpmn, convertToContentFormat, extractPerformers } from '@/../../apps/api/lib/bizagi-parser';
+import { convertBpmToBpmn, validateBpmnXml } from '@/../../apps/api/lib/bpm-converter';
 
 // Configuração do GitHub
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -13,250 +15,244 @@ const octokit = new Octokit({
   auth: GITHUB_TOKEN,
 });
 
+// Tipo para estrutura de pastas
+interface FolderConfig {
+  name: string;
+  fileCount: number;
+}
+
 /**
  * POST /api/upload-processo
  * Faz upload de processo para GitHub e arquivos locais
+ * Suporta arquivos .bpm (com conversão automática) e estrutura de pastas flexível
  */
 export async function POST(request: Request) {
   try {
-    console.log('[UPLOAD] Iniciando upload de processo...');
-    console.log('[UPLOAD] Current working directory:', process.cwd());
+    console.log('[UPLOAD] Iniciando upload de processo');
 
     const formData = await request.formData();
 
-    // Extrair dados
-    const nomeProcesso = formData.get('nomeProcesso') as string;
-    const bpmnPrincipal = formData.get('bpmn') as File;
-    const subdiagramas = formData.getAll('subdiagramas') as File[];
-    const documentos = formData.getAll('documentos') as File[];
+    // Extrair dados básicos
+    const processName = formData.get('processName') as string;
+    const mainFile = formData.get('mainFile') as File;
+    const mainFileName = formData.get('mainFileName') as string;
+    let bpmnXml = formData.get('bpmnXml') as string | null;
+    const folderStructureJson = formData.get('folderStructure') as string | null;
+    const clientType = formData.get('clientType') as string | null; // 'valeshop' ou 'quaddra'
 
-    if (!nomeProcesso || !bpmnPrincipal) {
-      console.error('[UPLOAD] Erro: Dados obrigatórios faltando');
+    // Determinar repositório baseado no cliente
+    const REPO_NAME = clientType === 'valeshop' ? 'vale-shope-processos' : (GITHUB_REPO || 'quaddra-processos');
+    
+    console.log('[UPLOAD] Cliente:', clientType || 'quaddra', '- Repositório:', REPO_NAME);
+
+    if (!processName || !mainFile) {
+      console.error('[UPLOAD] Dados obrigatórios faltando');
       return NextResponse.json(
-        { error: 'Nome do processo e arquivo BPMN são obrigatórios' },
+        { error: 'Nome do processo e arquivo principal são obrigatórios' },
         { status: 400 }
       );
     }
 
-    console.log(`[UPLOAD] Processo: ${nomeProcesso}`);
-    console.log(`[UPLOAD] BPMN: ${bpmnPrincipal.name}`);
-    console.log(`[UPLOAD] Subdiagramas: ${subdiagramas.length}`);
-    console.log(`[UPLOAD] Documentos: ${documentos.length}`);
+    // Parse da estrutura de pastas
+    let folderStructure: FolderConfig[] = [];
+    if (folderStructureJson) {
+      try {
+        folderStructure = JSON.parse(folderStructureJson);
+        console.log('[UPLOAD] Estrutura:', folderStructure.length, 'pasta(s)');
+      } catch (e) {
+        console.error('[UPLOAD] Erro ao parsear estrutura:', e);
+      }
+    }
 
-    // Criar estrutura local - usar caminho absoluto
-    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn', nomeProcesso);
-    console.log('[UPLOAD] Criando diretório:', bpmnDir);
-    
+    console.log('[UPLOAD] Processo:', processName);
+    console.log('[UPLOAD] Arquivo:', mainFileName);
+
+    // Criar estrutura local
+    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn', processName);
+    const contentDir = join(process.cwd(), '..', 'api', 'storage', 'content');
+
     try {
       if (!existsSync(bpmnDir)) {
         mkdirSync(bpmnDir, { recursive: true });
-        console.log('[UPLOAD] ✓ Diretório criado com sucesso');
-      } else {
-        console.log('[UPLOAD] ✓ Diretório já existe');
+      }
+      if (!existsSync(contentDir)) {
+        mkdirSync(contentDir, { recursive: true });
       }
     } catch (dirError: any) {
-      console.error('[UPLOAD] Erro ao criar diretório:', dirError);
-      throw new Error(`Erro ao criar diretório: ${dirError.message}`);
+      throw new Error(`Erro ao criar diretórios: ${dirError.message}`);
     }
 
-    let totalArquivos = 0;
-    const arquivosGitHub: Array<{ path: string; content: string }> = [];
+    let totalFiles = 0;
+    const githubFiles: Array<{ path: string; content: string }> = [];
 
-    // 1. Processar BPMN Principal
-    const bpmnContent = await bpmnPrincipal.text();
-    const bpmnPath = join(bpmnDir, bpmnPrincipal.name);
-    writeFileSync(bpmnPath, bpmnContent, 'utf-8');
-    totalArquivos++;
+    // Processar pastas personalizadas
+    for (let i = 0; i < folderStructure.length; i++) {
+      const folder = folderStructure[i];
+      const isRootFolder = i === 0; // Primeira pasta é a raiz
+      const folderFiles = formData.getAll(`folder_${folder.name}`) as File[];
 
-    // Adicionar ao GitHub
-    arquivosGitHub.push({
-      path: `${nomeProcesso}/${bpmnPrincipal.name}`,
-      content: Buffer.from(bpmnContent).toString('base64'),
-    });
-
-    console.log(`[UPLOAD] ✓ BPMN salvo: ${bpmnPath}`);
-
-    // 2. Processar Subdiagramas
-    if (subdiagramas.length > 0) {
-      const subDir = join(bpmnDir, 'subdiagramas');
-      if (!existsSync(subDir)) {
-        mkdirSync(subDir, { recursive: true });
+      if (folderFiles.length === 0) {
+        console.log('[UPLOAD] Pasta sem arquivos:', folder.name);
+        continue;
       }
 
-      for (const sub of subdiagramas) {
-        const content = await sub.text();
-        const subPath = join(subDir, sub.name);
-        writeFileSync(subPath, content, 'utf-8');
-        totalArquivos++;
+      console.log(`[UPLOAD] Processando pasta ${i + 1}:`, folder.name, '(', folderFiles.length, 'arquivos)', isRootFolder ? '(RAIZ)' : '');
 
-        arquivosGitHub.push({
-          path: `${nomeProcesso}/subdiagramas/${sub.name}`,
-          content: Buffer.from(content).toString('base64'),
+      // Determinar diretório de destino
+      const folderDir = isRootFolder ? bpmnDir : join(bpmnDir, folder.name);
+
+      if (!existsSync(folderDir)) {
+        mkdirSync(folderDir, { recursive: true });
+      }
+
+      // Processar cada arquivo
+      for (const file of folderFiles) {
+        const isText = file.name.endsWith('.bpmn') ||
+          file.name.endsWith('.txt') ||
+          file.name.endsWith('.json') ||
+          file.name.endsWith('.xml');
+
+        let content: Buffer;
+        if (isText) {
+          const text = await file.text();
+          content = Buffer.from(text, 'utf-8');
+        } else {
+          const buffer = await file.arrayBuffer();
+          content = Buffer.from(buffer);
+        }
+
+        // Salvar localmente
+        const filePath = join(folderDir, file.name);
+        writeFileSync(filePath, content);
+        totalFiles++;
+
+        // Adicionar ao GitHub (raiz ou subpasta)
+        const githubPath = isRootFolder
+          ? `${processName}/${file.name}`
+          : `${processName}/${folder.name}/${file.name}`;
+
+        githubFiles.push({
+          path: githubPath,
+          content: content.toString('base64'),
         });
 
-        console.log(`[UPLOAD] ✓ Subdiagrama salvo: ${subPath}`);
-      }
-    }
-
-    // 3. Processar Documentos POP/IT
-    if (documentos.length > 0) {
-      const popItDir = join(bpmnDir, 'pop-it', 'geral');
-      if (!existsSync(popItDir)) {
-        mkdirSync(popItDir, { recursive: true });
-      }
-
-      for (const doc of documentos) {
-        const buffer = await doc.arrayBuffer();
-        const docPath = join(popItDir, doc.name);
-        writeFileSync(docPath, Buffer.from(buffer));
-        totalArquivos++;
-
-        arquivosGitHub.push({
-          path: `${nomeProcesso}/pop-it/geral/${doc.name}`,
-          content: Buffer.from(buffer).toString('base64'),
-        });
-
-        console.log(`[UPLOAD] ✓ Documento salvo: ${docPath}`);
+        const displayPath = isRootFolder ? file.name : `${folder.name}/${file.name}`;
+        console.log('[UPLOAD] Arquivo salvo:', displayPath);
       }
     }
 
     // 4. Fazer commit e push no GitHub
-    console.log('[UPLOAD] Enviando para GitHub...');
-    console.log('[UPLOAD] GitHub Config:', {
-      owner: GITHUB_OWNER,
-      repo: GITHUB_REPO,
-      branch: GITHUB_BRANCH,
-      hasToken: !!GITHUB_TOKEN
-    });
+    console.log('[UPLOAD] Enviando para GitHub');
 
     try {
       // Verificar se o token está configurado
       if (!GITHUB_TOKEN) {
-        console.warn('[UPLOAD] ⚠️  GitHub token não configurado - pulando sincronização');
+        console.warn('[UPLOAD] GitHub token não configurado');
         return NextResponse.json({
           success: true,
           message: 'Processo salvo localmente (GitHub não configurado)',
-          nomeProcesso,
-          totalArquivos,
+          processName,
+          totalArquivos: totalFiles,
           githubSynced: false,
-          arquivos: {
-            bpmn: bpmnPrincipal.name,
-            subdiagramas: subdiagramas.map((s) => s.name),
-            documentos: documentos.map((d) => d.name),
-          },
+          folderStructure,
         });
       }
 
       // Obter SHA da branch principal
       const { data: ref } = await octokit.git.getRef({
         owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
+        repo: REPO_NAME,
         ref: `heads/${GITHUB_BRANCH}`,
       });
 
       const currentCommitSha = ref.object.sha;
-      console.log('[UPLOAD] ✓ Referência obtida:', currentCommitSha);
+      console.log('[UPLOAD] Referência obtida');
 
       // Obter árvore do commit atual
       const { data: currentCommit } = await octokit.git.getCommit({
         owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
+        repo: REPO_NAME,
         commit_sha: currentCommitSha,
       });
 
       const currentTreeSha = currentCommit.tree.sha;
 
       // Criar blobs para cada arquivo
-      console.log('[UPLOAD] Criando blobs para', arquivosGitHub.length, 'arquivos...');
+      console.log('[UPLOAD] Criando blobs:', githubFiles.length, 'arquivos');
       const blobs = await Promise.all(
-        arquivosGitHub.map(async (arquivo, index) => {
-          console.log(`[UPLOAD] Criando blob ${index + 1}/${arquivosGitHub.length}:`, arquivo.path);
+        githubFiles.map(async (file) => {
           const { data: blob } = await octokit.git.createBlob({
             owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            content: arquivo.content,
+            repo: REPO_NAME,
+            content: file.content,
             encoding: 'base64',
           });
 
           return {
-            path: arquivo.path,
+            path: file.path,
             mode: '100644' as const,
             type: 'blob' as const,
             sha: blob.sha,
           };
         })
       );
-      console.log('[UPLOAD] ✓ Todos os blobs criados');
+      console.log('[UPLOAD] Blobs criados');
 
       // Criar nova árvore
-      console.log('[UPLOAD] Criando nova árvore...');
+      console.log('[UPLOAD] Criando árvore');
       const { data: newTree } = await octokit.git.createTree({
         owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
+        repo: REPO_NAME,
         base_tree: currentTreeSha,
         tree: blobs,
       });
-      console.log('[UPLOAD] ✓ Árvore criada:', newTree.sha);
 
       // Criar commit
-      console.log('[UPLOAD] Criando commit...');
+      console.log('[UPLOAD] Criando commit');
       const { data: newCommit } = await octokit.git.createCommit({
         owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        message: `feat: adicionar processo ${nomeProcesso} via upload web\n\n- ${totalArquivos} arquivo(s) adicionado(s)`,
+        repo: REPO_NAME,
+        message: `feat: adicionar processo ${processName}\n\n- ${totalFiles} arquivo(s) adicionado(s)`,
         tree: newTree.sha,
         parents: [currentCommitSha],
       });
-      console.log('[UPLOAD] ✓ Commit criado:', newCommit.sha);
 
       // Atualizar referência da branch
-      console.log('[UPLOAD] Atualizando referência da branch...');
+      console.log('[UPLOAD] Atualizando branch');
       await octokit.git.updateRef({
         owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
+        repo: REPO_NAME,
         ref: `heads/${GITHUB_BRANCH}`,
         sha: newCommit.sha,
       });
 
-      console.log('[UPLOAD] ✓ Push para GitHub concluído!');
+      console.log('[UPLOAD] Push concluído');
     } catch (gitError: any) {
-      console.error('[UPLOAD] Erro ao fazer push no GitHub:', gitError);
-      console.error('[UPLOAD] Detalhes do erro:', {
-        message: gitError.message,
-        status: gitError.status,
-        response: gitError.response?.data
-      });
-      
+      console.error('[UPLOAD] Erro no GitHub:', gitError.message);
+
       // Salvar localmente mesmo se o GitHub falhar
-      console.log('[UPLOAD] Arquivos salvos localmente, mas GitHub falhou');
+      console.log('[UPLOAD] Arquivos salvos localmente');
       return NextResponse.json({
         success: true,
         message: 'Processo salvo localmente (erro ao sincronizar com GitHub)',
-        nomeProcesso,
-        totalArquivos,
+        processName,
+        totalArquivos: totalFiles,
         githubSynced: false,
         githubError: gitError.message,
-        arquivos: {
-          bpmn: bpmnPrincipal.name,
-          subdiagramas: subdiagramas.map((s) => s.name),
-          documentos: documentos.map((d) => d.name),
-        },
+        folderStructure,
       });
     }
 
-    console.log(`[UPLOAD] ✓ Upload concluído com sucesso! Total: ${totalArquivos} arquivos`);
+    console.log('[UPLOAD] Upload concluído');
+    console.log('[UPLOAD] Total:', totalFiles, 'arquivos');
 
     return NextResponse.json({
       success: true,
       message: 'Processo inserido e sincronizado com GitHub',
-      nomeProcesso,
-      totalArquivos,
+      processName,
+      totalArquivos: totalFiles,
       githubSynced: true,
-      arquivos: {
-        bpmn: bpmnPrincipal.name,
-        subdiagramas: subdiagramas.map((s) => s.name),
-        documentos: documentos.map((d) => d.name),
-      },
+      folderStructure,
     });
   } catch (error: any) {
     console.error('[UPLOAD] ❌ Erro fatal:', error);

@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import BpmnJS from 'bpmn-js/dist/bpmn-navigated-viewer.development.js';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type BpmnViewerProps = {
   bpmnUrl: string
@@ -11,6 +12,7 @@ type BpmnViewerProps = {
 }
 
 export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
+  const { theme } = useTheme();
   const ref = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [viewer, setViewer] = useState<any>(null);
@@ -28,11 +30,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [documentos, setDocumentos] = useState<Array<{name: string, size: number, path: string}>>([]);
+  const [documentos, setDocumentos] = useState<Array<{ name: string, size: number, path: string }>>([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [docNotificacao, setDocNotificacao] = useState<{tipo: 'sucesso' | 'erro', msg: string} | null>(null);
+  const [docNotificacao, setDocNotificacao] = useState<{ tipo: 'sucesso' | 'erro', msg: string } | null>(null);
   const [showAnexosPanel, setShowAnexosPanel] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
+  const [isPanelMinimized, setIsPanelMinimized] = useState(false);
 
   // Extrair slug do processo do bpmnUrl
   // bpmnUrl pode ser: /api/bpmn/VS_1_ProcessoComercial_Cliente/Comercial%20AS%20IS%20v2.0
@@ -41,7 +44,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const pathParts = bpmnPath.split('/');
   // Se tem mais de 1 parte, a primeira é a pasta do processo
   const processSlug = pathParts.length > 1 ? pathParts[0] : bpmnPath;
-  
+
   // Auto-fechar notificação de documento
   useEffect(() => {
     if (docNotificacao) {
@@ -55,12 +58,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     try {
       console.log('[BpmnViewer] Carregando documentos para slug:', processSlug);
       console.log('[BpmnViewer] URL:', `/api/documents/${encodeURIComponent(processSlug)}`);
-      
+
       const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`);
       const data = await response.json();
-      
+
       console.log('[BpmnViewer] Resposta da API:', data);
-      
+
       if (response.ok) {
         setDocumentos(data.documents || []);
         console.log('[BpmnViewer] Documentos carregados:', data.documents?.length || 0);
@@ -79,7 +82,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
     setUploadingDoc(true);
     setDocNotificacao(null);
-    
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -98,8 +101,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         }
         setDocNotificacao({
           tipo: 'sucesso',
-          msg: data.githubSynced 
-            ? `"${file.name}" enviado e sincronizado com GitHub!` 
+          msg: data.githubSynced
+            ? `"${file.name}" enviado e sincronizado com GitHub!`
             : `"${file.name}" salvo localmente`
         });
       } else {
@@ -136,7 +139,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     const filename = docToDelete;
     setDocToDelete(null);
     setDocNotificacao(null);
-    
+
     try {
       const response = await fetch(
         `/api/documents/${encodeURIComponent(processSlug)}?filename=${encodeURIComponent(filename)}`,
@@ -149,8 +152,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         await loadDocumentos();
         setDocNotificacao({
           tipo: 'sucesso',
-          msg: data.githubSynced 
-            ? `"${filename}" removido e sincronizado com GitHub!` 
+          msg: data.githubSynced
+            ? `"${filename}" removido e sincronizado com GitHub!`
             : `"${filename}" removido localmente`
         });
       } else {
@@ -189,7 +192,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   useEffect(() => {
     if (!ref.current) return;
-    
+
     let overlays: any, eventBus: any, canvas: any, elementRegistry: any;
     let active: Record<string, any> = {};
     let currentViewer: any = null;
@@ -197,7 +200,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     let cursorStyleEl: HTMLStyleElement | null = null;
 
     function escapeHtml(s: any) {
-      return String(s ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'} as any)[m]);
+      return String(s ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[m]);
     }
 
     async function load() {
@@ -206,12 +209,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         if (!ref.current) {
           return;
         }
-        
+
         setError('');
-        
+
         const xmlResp = await fetch(bpmnUrl);
         const descResp = await fetch(descriptionsUrl);
-        
+
         // Buscar content de forma silenciosa (sem mostrar erro 404)
         let contentResp = null;
         if (contentUrl) {
@@ -224,14 +227,14 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             contentResp = null; // Silenciar qualquer erro de rede
           }
         }
-        
+
         if (!xmlResp.ok) {
           throw new Error('BPMN não encontrado: ' + bpmnUrl);
         }
-        
+
         const xml = await xmlResp.text();
         const desc = descResp.ok ? await descResp.json() : {};
-        
+
         // Tratar content como opcional - se não existir, usar objeto vazio
         let content: any = {};
         if (contentResp && contentResp.ok) {
@@ -241,12 +244,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             console.warn('Content não disponível ou inválido, usando dados vazios');
           }
         }
-        
+
         // Verificar se o XML é válido
         if (!xml.includes('<definitions') || !xml.includes('</definitions>')) {
           throw new Error('XML BPMN inválido - não contém definições');
         }
-        
+
         // 3. Criar o viewer
         if (ref.current) {
           currentViewer = new (BpmnJS as any)({
@@ -262,25 +265,25 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               }
             }
           });
-          
+
           setViewer(currentViewer);
         } else {
           throw new Error('Container não disponível');
         }
-        
+
         if (currentViewer) {
           // Verificar novamente se o componente ainda está montado
           if (!ref.current) {
             return;
           }
-          
+
           // Importar XML e silenciar warnings de DataObject (problema do Bizagi)
           try {
             const result = await currentViewer.importXML(xml);
             if (result.warnings && result.warnings.length > 0) {
               // Filtrar apenas warnings críticos (não os de DataObject)
-              const criticalWarnings = result.warnings.filter((w: any) => 
-                !w.message?.includes('DataObject') && 
+              const criticalWarnings = result.warnings.filter((w: any) =>
+                !w.message?.includes('DataObject') &&
                 !w.message?.includes('not yet drawn')
               );
               if (criticalWarnings.length > 0) {
@@ -289,8 +292,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
           } catch (importError: any) {
             // Ignorar erros de DataObject que não impedem renderização
-            if (!importError.message?.includes('DataObject') && 
-                !importError.message?.includes('not yet drawn')) {
+            if (!importError.message?.includes('DataObject') &&
+              !importError.message?.includes('not yet drawn')) {
               throw importError;
             }
             console.warn('[BPMN] Aviso ignorado (DataObject):', importError.message);
@@ -303,7 +306,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           } catch (zoomError) {
             console.warn('Erro ao ajustar zoom inicial:', zoomError);
           }
-          
+
           overlays = currentViewer.get('overlays');
           eventBus = currentViewer.get('eventBus');
           canvas = currentViewer.get('canvas');
@@ -315,9 +318,9 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           }
           const originalConsoleError = (window as any).__originalConsoleError || console.error;
           const silencedErrors = ['DataObject', 'not yet drawn', 'Association'];
-          (console as any).error = function(...args: any[]) {
+          (console as any).error = function (...args: any[]) {
             const message = args.join(' ');
-            const shouldSilence = silencedErrors.some(keyword => 
+            const shouldSilence = silencedErrors.some(keyword =>
               message.includes(keyword) && message.includes('failed to import')
             );
             if (!shouldSilence) {
@@ -536,7 +539,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           let clickCount = 0;
           let clickTimer: any = null;
 
-          eventBus.on('element.click', 100, function(e: any) {
+          eventBus.on('element.click', 100, function (e: any) {
             const id = e.element.id;
             const element = e.element;
             clickCount++;
@@ -547,72 +550,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 const details = contentById[id];
                 const fallback = flat[id];
                 const businessObject = element.businessObject;
-                
+
                 // Sempre cria um objeto, mesmo que vazio
                 const merged = details
                   ? { id, ...details }
-                  : (fallback ? { 
-                      id,
-                      nome: fallback.name || id,
-                      observacoes: fallback.description ? [fallback.description] : [],
-                      arquivo: fallback.file,
-                      processo: fallback.processName
-                    } : {
-                      id,
-                      nome: businessObject?.name || element.type || id,
-                      tipo: element.type,
-                      ator: '',
-                      entradas: [],
-                      saidas: [],
-                      ferramentas: [],
-                      passoAPasso: [],
-                      popItReferencia: [],
-                      observacoes: []
-                    });
-                
-                // Aplicar edições locais se existirem (ler direto do localStorage)
-                let finalData = merged;
-                try {
-                  const storageKey = `bpmn_edits_${bpmnUrl}`;
-                  const stored = localStorage.getItem(storageKey);
-                  if (stored) {
-                    const edits = JSON.parse(stored);
-                    if (edits[id]) {
-                      finalData = { ...merged, ...edits[id] };
-                    }
-                  }
-                } catch (e) {
-                  console.warn('Erro ao carregar edições do localStorage:', e);
-                }
-                
-                setSelected(finalData);
-                setSelectedId(id);
-                setIsEditing(false);
-                setShowModal(false);
-
-                try {
-                  if (selectionMarker) {
-                    canvas.removeMarker(selectionMarker, 'bpmn-selected');
-                  }
-                  canvas.addMarker(id, 'bpmn-selected');
-                  selectionMarker = id;
-                } catch (selErr) {
-                  console.warn('Falha ao aplicar marcador de seleção', selErr);
-                }
-                
-                clickCount = 0;
-              }, 250);
-            } else if (clickCount === 2) {
-              // Duplo clique - abrir modal
-              clearTimeout(clickTimer);
-              const details = contentById[id];
-              const fallback = flat[id];
-              const businessObject = element.businessObject;
-              
-              // Sempre cria um objeto, mesmo que vazio
-              const merged = details
-                ? { id, ...details }
-                : (fallback ? { 
+                  : (fallback ? {
                     id,
                     nome: fallback.name || id,
                     observacoes: fallback.description ? [fallback.description] : [],
@@ -630,7 +572,68 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                     popItReferencia: [],
                     observacoes: []
                   });
-              
+
+                // Aplicar edições locais se existirem (ler direto do localStorage)
+                let finalData = merged;
+                try {
+                  const storageKey = `bpmn_edits_${bpmnUrl}`;
+                  const stored = localStorage.getItem(storageKey);
+                  if (stored) {
+                    const edits = JSON.parse(stored);
+                    if (edits[id]) {
+                      finalData = { ...merged, ...edits[id] };
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Erro ao carregar edições do localStorage:', e);
+                }
+
+                setSelected(finalData);
+                setSelectedId(id);
+                setIsEditing(false);
+                setShowModal(false);
+
+                try {
+                  if (selectionMarker) {
+                    canvas.removeMarker(selectionMarker, 'bpmn-selected');
+                  }
+                  canvas.addMarker(id, 'bpmn-selected');
+                  selectionMarker = id;
+                } catch (selErr) {
+                  console.warn('Falha ao aplicar marcador de seleção', selErr);
+                }
+
+                clickCount = 0;
+              }, 250);
+            } else if (clickCount === 2) {
+              // Duplo clique - abrir modal
+              clearTimeout(clickTimer);
+              const details = contentById[id];
+              const fallback = flat[id];
+              const businessObject = element.businessObject;
+
+              // Sempre cria um objeto, mesmo que vazio
+              const merged = details
+                ? { id, ...details }
+                : (fallback ? {
+                  id,
+                  nome: fallback.name || id,
+                  observacoes: fallback.description ? [fallback.description] : [],
+                  arquivo: fallback.file,
+                  processo: fallback.processName
+                } : {
+                  id,
+                  nome: businessObject?.name || element.type || id,
+                  tipo: element.type,
+                  ator: '',
+                  entradas: [],
+                  saidas: [],
+                  ferramentas: [],
+                  passoAPasso: [],
+                  popItReferencia: [],
+                  observacoes: []
+                });
+
               // Aplicar edições locais se existirem (ler direto do localStorage)
               let finalData = merged;
               try {
@@ -645,15 +648,15 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               } catch (e) {
                 console.warn('Erro ao carregar edições do localStorage:', e);
               }
-              
+
               setSelected(finalData);
               setSelectedId(id);
               setShowModal(true);
               setModalDimensions({ width: 800, height: 600 });
               // Centralizar na tela
-              setModalPosition({ 
-                x: (window.innerWidth - 800) / 2, 
-                y: (window.innerHeight - 600) / 2 
+              setModalPosition({
+                x: (window.innerWidth - 800) / 2,
+                y: (window.innerHeight - 600) / 2
               });
               clickCount = 0;
             }
@@ -677,18 +680,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
           });
 
-          eventBus.on('element.out', 100, function(e: any) {
+          eventBus.on('element.out', 100, function (e: any) {
             const id = e.element.id;
             if (active[id]) { overlays.remove(active[id]); delete active[id]; }
           });
-          
+
           // Verificar se o diagrama está visível após um pequeno delay
           setTimeout(() => {
             if (ref.current && currentViewer) {
               const canvas = currentViewer.get('canvas');
               const elementRegistry = currentViewer.get('elementRegistry');
               const elements = elementRegistry.getAll();
-              
+
               // Se não há elementos visíveis, mostrar mensagem
               if (elements.length === 0) {
                 if (ref.current) {
@@ -709,7 +712,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       } catch (err) {
         console.error('Erro detalhado ao carregar BPMN:', err);
         setError(err instanceof Error ? err.message : 'Erro desconhecido');
-        
+
         if (ref.current) {
           // Fallback: mostrar o XML como texto
           try {
@@ -757,14 +760,14 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     load();
 
     return () => {
-      try { 
+      try {
         if (currentViewer) {
-          currentViewer.destroy(); 
+          currentViewer.destroy();
         }
       } catch (e) {
         console.error('Erro ao destruir viewer:', e);
       }
-      
+
       // Restaurar console.error original ao desmontar
       if (typeof window !== 'undefined' && (window as any).__originalConsoleError) {
         console.error = (window as any).__originalConsoleError;
@@ -775,7 +778,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   // Funcoes de edicao
   const handleStartEdit = () => {
     // Garantir que todos os campos de array existam
-    const initialData = selected ? { 
+    const initialData = selected ? {
       ...selected,
       entradas: selected.entradas || [],
       saidas: selected.saidas || [],
@@ -801,11 +804,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   };
 
   const handleSaveEdit = () => {
-    
+
     if (selectedId && editedData) {
       setLocalEdits((prev: any) => {
         const newEdits = { ...prev, [selectedId]: editedData };
-        
+
         // Salvar no localStorage com o valor mais recente
         try {
           const storageKey = `bpmn_edits_${bpmnUrl}`;
@@ -813,10 +816,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         } catch (e) {
           console.error('[Storage] Erro ao salvar edições no localStorage:', e);
         }
-        
+
         return newEdits;
       });
-      
+
       setSelected(editedData);
       setIsEditing(false);
       setEditedData(null);
@@ -875,7 +878,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       if (isResizing) {
         const deltaX = e.clientX - resizeStart.x;
         const deltaY = e.clientY - resizeStart.y;
-        
+
         let newWidth = resizeStart.width;
         let newHeight = resizeStart.height;
         let newX = resizeStart.posX;
@@ -947,11 +950,14 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   if (error) {
     return (
       <div className="w-full p-6 bg-orange-50 border border-orange-300 rounded-lg">
-        <h3 className="text-lg font-semibold text-orange-800 mb-2">Erro ao carregar BPMN</h3>
-        <p className="text-orange-700 mb-4">{error}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
+        <h3 className="text-lg font-semibold mb-2" style={{ color: theme.colors.text }}>Erro ao carregar BPMN</h3>
+        <p className="mb-4" style={{ color: theme.colors.textSecondary }}>{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 text-white rounded transition-colors"
+          style={{ backgroundColor: theme.colors.primary }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
         >
           Tentar Novamente
         </button>
@@ -961,25 +967,48 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 gap-6 transition-all duration-300 ${isPanelMinimized ? 'lg:grid-cols-1' : 'lg:grid-cols-3'}`}>
         {/* Container do Diagrama */}
-        <div className="lg:col-span-2">
-          <div 
-            ref={ref} 
-            className="w-full bg-white rounded-lg border border-gray-200 overflow-hidden"
-            style={{ 
-              height: '80vh',
-              minHeight: '700px',
-              position: 'relative',
-              backgroundColor: '#ffffff'
-            }} 
-          />
-          
+        <div className={`transition-all duration-300 ${isPanelMinimized ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+          <div className="relative">
+            <div
+              ref={ref}
+              className="w-full bg-white rounded-lg border border-gray-200 overflow-hidden"
+              style={{
+                height: '80vh',
+                minHeight: '700px',
+                position: 'relative',
+                backgroundColor: '#ffffff'
+              }}
+            />
+
+            {/* Botão para expandir painel (aparece quando minimizado) */}
+            {isPanelMinimized && (
+              <button
+                onClick={() => setIsPanelMinimized(false)}
+                className="absolute top-4 right-4 px-4 py-2 text-white rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl z-50 flex items-center gap-2 font-medium"
+                style={{ backgroundColor: theme.colors.primary }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primary;
+                }}
+                title="Expandir painel de detalhes"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                </svg>
+                Mostrar Detalhes
+              </button>
+            )}
+          </div>
+
           {/* Indicador de status */}
           <div className="mt-2 text-xs text-gray-500 text-center">
             <p>Status: {viewer ? 'Diagrama carregado' : 'Carregando...'}</p>
           </div>
-          
+
           {/* Instruções */}
           <div className="mt-3 text-xs text-gray-500 text-center">
             <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
@@ -989,14 +1018,17 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           <div className="mt-4">
             <button
               onClick={() => setShowAnexosPanel(!showAnexosPanel)}
-              className="w-full px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-4 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              style={{ backgroundColor: theme.colors.primary }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
               Anexos do Processo
               {documentos.length > 0 && (
-                <span className="bg-white text-orange-600 px-2 py-0.5 rounded-full text-xs font-semibold">
+                <span className="bg-white px-2 py-0.5 rounded-full text-xs font-semibold" style={{ color: theme.colors.primary }}>
                   {documentos.length}
                 </span>
               )}
@@ -1020,13 +1052,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
               {/* Notificação de upload */}
               {docNotificacao && (
-                <div className={`mb-3 p-2 rounded text-sm flex items-center gap-2 ${
-                  docNotificacao.tipo === 'sucesso' 
-                    ? 'bg-orange-50 text-orange-800 border border-orange-200' 
-                    : 'bg-gray-100 text-gray-700 border border-gray-300'
-                }`}>
+                <div 
+                  className={`mb-3 p-2 rounded text-sm flex items-center gap-2 border`}
+                  style={{
+                    backgroundColor: docNotificacao.tipo === 'sucesso' ? theme.colors.background : '#f3f4f6',
+                    color: docNotificacao.tipo === 'sucesso' ? theme.colors.text : '#374151',
+                    borderColor: docNotificacao.tipo === 'sucesso' ? theme.colors.border : '#d1d5db'
+                  }}
+                >
                   {docNotificacao.tipo === 'sucesso' ? (
-                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
@@ -1058,16 +1093,19 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   {documentos.map((doc, idx) => (
                     <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <svg className="w-5 h-5 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 flex-shrink-0" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <span className="text-sm text-gray-800 truncate">{doc.name}</span>
                       </div>
                       <div className="flex gap-2 ml-2">
-                        <a 
-                          href={doc.path} 
+                        <a
+                          href={doc.path}
                           download
-                          className="px-3 py-1.5 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                          className="px-3 py-1.5 text-white text-xs rounded transition-colors"
+                          style={{ backgroundColor: theme.colors.primary }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
                         >
                           Baixar
                         </a>
@@ -1089,7 +1127,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingDoc}
-                className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: theme.colors.primary }}
+                onMouseEnter={(e) => !uploadingDoc && (e.currentTarget.style.backgroundColor = theme.colors.primaryHover)}
+                onMouseLeave={(e) => !uploadingDoc && (e.currentTarget.style.backgroundColor = theme.colors.primary)}
               >
                 {uploadingDoc ? (
                   <>
@@ -1118,7 +1159,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-6 h-6" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                   </div>
@@ -1138,7 +1179,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   </button>
                   <button
                     onClick={handleDocDelete}
-                    className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+                    className="flex-1 px-4 py-2 text-white rounded-lg transition-colors font-medium"
+                    style={{ backgroundColor: theme.colors.primary }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
                   >
                     Excluir
                   </button>
@@ -1149,14 +1193,32 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         </div>
 
         {/* Painel lateral */}
-        <div className="lg:col-span-1">
+        <div className={`lg:col-span-1 transition-all duration-300 ${isPanelMinimized ? 'lg:hidden' : ''}`}>
           <div className="h-full min-h-[300px] bg-white border border-gray-200 rounded-lg p-4 shadow-sm overflow-y-auto max-h-[80vh]">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-normal text-gray-900">Detalhes da atividade</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-normal text-gray-900">Detalhes da atividade</h3>
+                <button
+                  onClick={() => setIsPanelMinimized(!isPanelMinimized)}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                  title="Minimizar painel"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
               {selected && !isEditing && (
                 <button
                   onClick={handleStartEdit}
-                  className="px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
+                  style={{ backgroundColor: theme.colors.primary }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = theme.colors.primary;
+                  }}
                 >
                   Editar
                 </button>
@@ -1165,7 +1227,14 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 <div className="flex gap-2">
                   <button
                     onClick={handleSaveEdit}
-                    className="px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                    className="px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
+                    style={{ backgroundColor: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = theme.colors.primary;
+                    }}
                   >
                     Salvar
                   </button>
@@ -1178,7 +1247,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 </div>
               )}
             </div>
-            
+
             {!contentUrl && (
               <p className="text-sm text-gray-500">Nenhum conteúdo detalhado configurado.</p>
             )}
@@ -1298,7 +1367,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('entradas')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar entrada
                   </button>
@@ -1324,7 +1402,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('saidas')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar saída
                   </button>
@@ -1350,7 +1437,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('ferramentas')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar ferramenta
                   </button>
@@ -1377,7 +1473,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('passoAPasso')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar passo
                   </button>
@@ -1403,7 +1508,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('popItReferencia')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar referência
                   </button>
@@ -1429,7 +1543,16 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                   ))}
                   <button
                     onClick={() => handleArrayFieldAdd('observacoes')}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 px-3 py-1 rounded-md hover:bg-orange-50 transition-all duration-150"
+                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
+                    style={{ color: theme.colors.primary }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = theme.colors.primaryHover;
+                      e.currentTarget.style.backgroundColor = theme.colors.background;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = theme.colors.primary;
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     + Adicionar observação
                   </button>
@@ -1442,282 +1565,283 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
       {/* Modal de detalhes (duplo clique) - Arrastável e Redimensionável */}
       {showModal && selected && (
-        <div 
-            className="fixed z-50 bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
-            style={{ 
-              left: `${modalPosition.x}px`,
-              top: `${modalPosition.y}px`,
-              width: `${modalDimensions.width}px`,
-              height: `${modalDimensions.height}px`,
-              minWidth: '400px',
-              minHeight: '300px',
-              maxWidth: '95vw',
-              maxHeight: '95vh'
+        <div
+          className="fixed z-50 bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
+          style={{
+            left: `${modalPosition.x}px`,
+            top: `${modalPosition.y}px`,
+            width: `${modalDimensions.width}px`,
+            height: `${modalDimensions.height}px`,
+            minWidth: '400px',
+            minHeight: '300px',
+            maxWidth: '95vw',
+            maxHeight: '95vh'
+          }}
+        >
+          {/* Barra superior - área de arrastar */}
+          <div
+            className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 text-white cursor-move select-none"
+            style={{ backgroundColor: theme.colors.primary }}
+            onMouseDown={(e) => {
+              // Só arrastar se não estiver clicando em um botão ou handle de redimensionamento
+              const target = e.target as HTMLElement;
+              if (target.closest('button') || target.closest('.resize-handle')) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragging(true);
+              setDragStart({
+                x: e.clientX - modalPosition.x,
+                y: e.clientY - modalPosition.y
+              });
             }}
           >
-            {/* Barra superior - área de arrastar */}
-            <div 
-              className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 bg-gradient-to-r from-orange-400 to-orange-500 text-white cursor-move select-none"
-              onMouseDown={(e) => {
-                // Só arrastar se não estiver clicando em um botão ou handle de redimensionamento
-                const target = e.target as HTMLElement;
-                if (target.closest('button') || target.closest('.resize-handle')) {
-                  return;
-                }
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDragging(true);
-                setDragStart({
-                  x: e.clientX - modalPosition.x,
-                  y: e.clientY - modalPosition.y
-                });
+            <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
+            <button
+              onClick={() => {
+                setShowModal(false);
+                setModalDimensions({ width: 1000, height: 700 });
+                setModalPosition({ x: 0, y: 0 });
               }}
+              className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
+              title="Fechar"
             >
-              <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setModalDimensions({ width: 1000, height: 700 });
-                  setModalPosition({ x: 0, y: 0 });
-                }}
-                className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
-                title="Fechar"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ator</h3>
-                  <p className="text-base text-gray-900">{selected.ator || '-'}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Entradas</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.entradas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma entrada cadastrada</li>
-                    ) : (
-                      (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Saídas</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.saidas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma saída cadastrada</li>
-                    ) : (
-                      (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ferramentas</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.ferramentas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
-                    ) : (
-                      (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Passo a passo</h3>
-                  <ol className="text-base text-gray-900 list-decimal list-inside space-y-1">
-                    {(selected.passoAPasso || []).length === 0 ? (
-                      <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
-                    ) : (
-                      (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ol>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">POP / IT</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.popItReferencia || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma referência cadastrada</li>
-                    ) : (
-                      (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
-                  <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                    {(selected.observacoes || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma observação cadastrada</li>
-                    ) : (
-                      (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
+              ×
+            </button>
+          </div>
+          <div className="p-6 overflow-y-auto flex-1">
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ator</h3>
+                <p className="text-base text-gray-900">{selected.ator || '-'}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Entradas</h3>
+                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                  {(selected.entradas || []).length === 0 ? (
+                    <li className="text-gray-400">Nenhuma entrada cadastrada</li>
+                  ) : (
+                    (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Saídas</h3>
+                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                  {(selected.saidas || []).length === 0 ? (
+                    <li className="text-gray-400">Nenhuma saída cadastrada</li>
+                  ) : (
+                    (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ferramentas</h3>
+                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                  {(selected.ferramentas || []).length === 0 ? (
+                    <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
+                  ) : (
+                    (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Passo a passo</h3>
+                <ol className="text-base text-gray-900 list-decimal list-inside space-y-1">
+                  {(selected.passoAPasso || []).length === 0 ? (
+                    <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
+                  ) : (
+                    (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ol>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">POP / IT</h3>
+                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                  {(selected.popItReferencia || []).length === 0 ? (
+                    <li className="text-gray-400">Nenhuma referência cadastrada</li>
+                  ) : (
+                    (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
+                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
+                  {(selected.observacoes || []).length === 0 ? (
+                    <li className="text-gray-400">Nenhuma observação cadastrada</li>
+                  ) : (
+                    (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
+                  )}
+                </ul>
               </div>
             </div>
-            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setModalDimensions({ width: 800, height: 600 });
-                  setModalPosition({ x: 0, y: 0 });
-                }}
-                className="px-6 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
-              >
-                Fechar
-              </button>
-            </div>
-            
-            {/* Handles de redimensionamento nas bordas - só redimensiona quando clica e arrasta */}
-            {/* Borda superior */}
-            <div
-              className="resize-handle absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false); // Garantir que não está arrastando
-                setResizeDirection('n');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            {/* Borda inferior */}
-            <div
-              className="resize-handle absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('s');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            {/* Borda esquerda */}
-            <div
-              className="resize-handle absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('w');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            {/* Borda direita */}
-            <div
-              className="resize-handle absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('e');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            {/* Cantos */}
-            <div
-              className="resize-handle absolute top-0 left-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('nw');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            <div
-              className="resize-handle absolute top-0 right-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('ne');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            <div
-              className="resize-handle absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('sw');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
-            <div
-              className="resize-handle absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setIsDragging(false);
-                setResizeDirection('se');
-                setResizeStart({
-                  x: e.clientX,
-                  y: e.clientY,
-                  width: modalDimensions.width,
-                  height: modalDimensions.height,
-                  posX: modalPosition.x,
-                  posY: modalPosition.y
-                });
-              }}
-            />
           </div>
+          <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+            <button
+              onClick={() => {
+                setShowModal(false);
+                setModalDimensions({ width: 800, height: 600 });
+                setModalPosition({ x: 0, y: 0 });
+              }}
+              className="px-6 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+            >
+              Fechar
+            </button>
+          </div>
+
+          {/* Handles de redimensionamento nas bordas - só redimensiona quando clica e arrasta */}
+          {/* Borda superior */}
+          <div
+            className="resize-handle absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false); // Garantir que não está arrastando
+              setResizeDirection('n');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          {/* Borda inferior */}
+          <div
+            className="resize-handle absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('s');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          {/* Borda esquerda */}
+          <div
+            className="resize-handle absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('w');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          {/* Borda direita */}
+          <div
+            className="resize-handle absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('e');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          {/* Cantos */}
+          <div
+            className="resize-handle absolute top-0 left-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('nw');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          <div
+            className="resize-handle absolute top-0 right-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('ne');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          <div
+            className="resize-handle absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('sw');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+          <div
+            className="resize-handle absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsResizing(true);
+              setIsDragging(false);
+              setResizeDirection('se');
+              setResizeStart({
+                x: e.clientX,
+                y: e.clientY,
+                width: modalDimensions.width,
+                height: modalDimensions.height,
+                posX: modalPosition.x,
+                posY: modalPosition.y
+              });
+            }}
+          />
+        </div>
       )}
     </div>
   );
