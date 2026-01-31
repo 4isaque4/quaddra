@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { Header, Footer } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -191,7 +192,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
                       </h3>
                       <div className="flex gap-2">
                         <Link
-                          href={`${basePath}/processos/${processo.slug}`}
+                          href={(basePath ? `/vale-shop/processos/${processo.slug}` : `/processos/${processo.slug}`) as Route}
                           className="flex-1 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
                           style={{
                             backgroundColor: theme.colors.primary,
