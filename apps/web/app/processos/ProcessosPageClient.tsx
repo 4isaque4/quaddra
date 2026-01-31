@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Header, Footer } from '@/components';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface ProcessoItem {
   file: string;
@@ -13,6 +14,7 @@ interface ProcessoItem {
 
 interface ProcessosPageClientProps {
   processosIniciais: ProcessoItem[];
+  basePath?: string;
 }
 
 interface Notificacao {
@@ -20,7 +22,14 @@ interface Notificacao {
   mensagem: string;
 }
 
-export default function ProcessosPageClient({ processosIniciais }: ProcessosPageClientProps) {
+export default function ProcessosPageClient({ processosIniciais, basePath = '' }: ProcessosPageClientProps) {
+  const { theme } = useTheme();
+  
+  // Debug: verificar qual tema está sendo usado
+  useEffect(() => {
+    console.log('🎨 Tema atual:', theme.name, 'Primary:', theme.colors.primary);
+  }, [theme]);
+  
   const [processos, setProcessos] = useState<ProcessoItem[]>(processosIniciais);
   const [filtro, setFiltro] = useState('');
   const [deletando, setDeletando] = useState<string | null>(null);
@@ -131,7 +140,16 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
                 placeholder="Buscar..."
                 value={filtro}
                 onChange={(e) => setFiltro(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none"
+                style={{
+                  borderColor: filtro ? theme.colors.primary : undefined,
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = theme.colors.primary;
+                }}
+                onBlur={(e) => {
+                  if (!filtro) e.target.style.borderColor = '';
+                }}
               />
               {filtro && (
                 <p className="mt-2 text-sm text-gray-500">
@@ -157,23 +175,55 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
                   {grupos[categoria].map((processo) => (
                     <div
                       key={processo.slug}
-                      className="bg-white border border-gray-200 rounded-lg p-5 hover:border-orange-500 transition-colors"
+                      className="bg-white border border-gray-200 rounded-lg p-5 transition-colors"
+                      style={{
+                        borderColor: undefined,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = theme.colors.primary;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '';
+                      }}
                     >
                       <h3 className="text-base font-semibold text-gray-900 mb-3">
                         {getDisplayName(processo)}
                       </h3>
                       <div className="flex gap-2">
                         <Link
-                          href={`/processos/${processo.slug}`}
-                          className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
+                          href={`${basePath}/processos/${processo.slug}`}
+                          className="flex-1 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
+                          style={{
+                            backgroundColor: theme.colors.primary,
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = theme.colors.primary;
+                          }}
                         >
                           Abrir
                         </Link>
                         <button
                           onClick={() => handleDeleteClick(processo)}
                           disabled={deletando === processo.slug}
-                          className="px-3 py-2 border border-gray-300 hover:border-orange-500 hover:text-orange-600 rounded transition-colors disabled:opacity-50"
+                          className="px-3 py-2 border border-gray-300 rounded transition-colors disabled:opacity-50"
                           title="Deletar"
+                          style={{
+                            borderColor: undefined,
+                            color: undefined,
+                          }}
+                          onMouseEnter={(e) => {
+                            if (deletando !== processo.slug) {
+                              e.currentTarget.style.borderColor = theme.colors.primary;
+                              e.currentTarget.style.color = theme.colors.primary;
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = '';
+                            e.currentTarget.style.color = '';
+                          }}
                         >
                           {deletando === processo.slug ? (
                             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -197,7 +247,16 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
           <div className="mt-12">
             <Link
               href="/"
-              className="inline-block text-gray-600 hover:text-orange-600 text-sm font-medium transition-colors"
+              className="inline-block text-gray-600 text-sm font-medium transition-colors"
+              style={{
+                color: undefined,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = theme.colors.primary;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '';
+              }}
             >
               ← Voltar
             </Link>
@@ -209,7 +268,12 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
       {/* Notificação Toast - Minimalista */}
       {notificacao && (
         <div className="fixed top-24 right-4 z-50 animate-slide-in">
-          <div className="bg-white border-l-4 border-orange-500 shadow-lg p-4 max-w-sm">
+          <div 
+            className="bg-white shadow-lg p-4 max-w-sm"
+            style={{
+              borderLeft: `4px solid ${notificacao.tipo === 'sucesso' ? theme.colors.primary : '#EF4444'}`,
+            }}
+          >
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-900">{notificacao.mensagem}</p>
@@ -251,7 +315,20 @@ export default function ProcessosPageClient({ processosIniciais }: ProcessosPage
               <button
                 onClick={handleConfirmDelete}
                 disabled={!!deletando}
-                className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm font-medium transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2 text-white rounded text-sm font-medium transition-colors disabled:opacity-50"
+                style={{
+                  backgroundColor: theme.colors.primary,
+                }}
+                onMouseEnter={(e) => {
+                  if (!deletando) {
+                    e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!deletando) {
+                    e.currentTarget.style.backgroundColor = theme.colors.primary;
+                  }
+                }}
               >
                 {deletando ? 'Deletando...' : 'Deletar'}
               </button>

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Draggable from 'react-draggable';
 import Notification from './Notification';
 import ConfirmDialog from './ConfirmDialog';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type ProcessSettingsModalProps = {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export default function ProcessSettingsModal({
   originalName,
   originalFileName
 }: ProcessSettingsModalProps) {
+  const { theme } = useTheme();
   const [customName, setCustomName] = useState('');
   const [showFileRename, setShowFileRename] = useState(false);
   const [newFileName, setNewFileName] = useState('');
@@ -220,7 +222,10 @@ export default function ProcessSettingsModal({
       <Draggable handle=".drag-handle" bounds="parent">
         <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header arrastável */}
-          <div className="drag-handle flex justify-between items-center p-5 border-b border-gray-200 bg-gradient-to-r from-orange-400 to-orange-500 text-white cursor-move">
+          <div 
+            className="drag-handle flex justify-between items-center p-5 border-b border-gray-200 text-white cursor-move"
+            style={{ backgroundColor: theme.colors.primary }}
+          >
             <h2 className="text-xl font-semibold">
               Configurações do Processo
             </h2>
@@ -249,11 +254,27 @@ export default function ProcessSettingsModal({
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder={originalName}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none"
+                  style={{ borderColor: '#d1d5db' }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = theme.colors.primary;
+                    e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = '#d1d5db';
+                    e.target.style.boxShadow = 'none';
+                  }}
                 />
                 <button
                   onClick={handleSaveCustomName}
-                  className="mt-3 px-4 py-2 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg hover:from-orange-500 hover:to-orange-600 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                  className="mt-3 px-4 py-2 text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                  style={{ backgroundColor: theme.colors.primary }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = theme.colors.primary;
+                  }}
                 >
                   Salvar Nome Customizado
                 </button>
@@ -293,11 +314,26 @@ export default function ProcessSettingsModal({
                       type="text"
                       value={newFileName}
                       onChange={(e) => setNewFileName(e.target.value)}
-                      className="w-full px-4 py-2 border border-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 mb-3"
+                      className="w-full px-4 py-2 border border-yellow-300 rounded-lg focus:outline-none mb-3"
+                      onFocus={(e) => {
+                        e.target.style.borderColor = theme.colors.primary;
+                        e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#fde047';
+                        e.target.style.boxShadow = 'none';
+                      }}
                     />
                     <button
                       onClick={handleSaveFileName}
-                      className="px-4 py-2 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg hover:from-orange-500 hover:to-orange-600 transition-all duration-200 font-medium"
+                      className="px-4 py-2 text-white rounded-lg transition-all duration-200 font-medium"
+                      style={{ backgroundColor: theme.colors.primary }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = theme.colors.primary;
+                      }}
                     >
                       Confirmar Renomeação
                     </button>
@@ -344,9 +380,20 @@ export default function ProcessSettingsModal({
                     accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
                   />
                   <button
-                    className="w-full px-4 py-2 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg hover:from-orange-500 hover:to-orange-600 transition-all duration-200 shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full px-4 py-2 text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: theme.colors.primary }}
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading}
+                    onMouseEnter={(e) => {
+                      if (!isUploading) {
+                        e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isUploading) {
+                        e.currentTarget.style.backgroundColor = theme.colors.primary;
+                      }
+                    }}
                   >
                     {isUploading ? 'Enviando...' : 'Fazer Upload de Documento'}
                   </button>
@@ -372,7 +419,14 @@ export default function ProcessSettingsModal({
                           <a
                             href={doc.path}
                             download
-                            className="ml-3 px-3 py-1 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded hover:from-orange-500 hover:to-orange-600 transition-colors text-sm font-medium"
+                            className="ml-3 px-3 py-1 text-white rounded transition-colors text-sm font-medium"
+                            style={{ backgroundColor: theme.colors.primary }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = theme.colors.primary;
+                            }}
                           >
                             Download
                           </a>

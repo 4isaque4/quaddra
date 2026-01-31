@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Header, Footer, ProcessSettingsModal } from '@/components';
 import BpmnViewer from '@/components/BpmnViewer';
 import DiagramaSelector from './DiagramaSelector';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type ProcessoInfo = {
   slug: string;
@@ -22,6 +24,10 @@ type ProcessoPageClientProps = {
 };
 
 export default function ProcessoPageClient({ processo, outros }: ProcessoPageClientProps) {
+  const { theme } = useTheme();
+  const pathname = usePathname();
+  const basePath = pathname?.startsWith('/vale-shop') ? '/vale-shop' : '';
+  
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [displayName, setDisplayName] = useState(processo.nome);
 
@@ -49,8 +55,11 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
         <div className="container py-16">
           <div className="mb-8">
             <Link 
-              href="/processos"
-              className="inline-flex items-center text-orange-500 hover:text-orange-600 font-semibold mb-4"
+              href={`${basePath}/processos`}
+              className="inline-flex items-center font-semibold mb-4 transition-colors"
+              style={{ color: theme.colors.primary }}
+              onMouseEnter={(e) => e.currentTarget.style.color = theme.colors.primaryHover}
+              onMouseLeave={(e) => e.currentTarget.style.color = theme.colors.primary}
             >
               ← Voltar aos Processos
             </Link>
@@ -71,7 +80,16 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
               {/* Botão de Configurações */}
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="ml-4 px-5 py-2.5 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg hover:from-orange-500 hover:to-orange-600 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                className="ml-4 px-5 py-2.5 text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                style={{ backgroundColor: theme.colors.primary }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                  e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primary;
+                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                }}
                 title="Configurações do Processo"
               >
                 Configurações
