@@ -1,5 +1,6 @@
 'use client'
 
+import type { Route } from 'next'
 import { useRouter, usePathname } from 'next/navigation'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -23,7 +24,8 @@ export default function DiagramaSelector({ processoAtual, outrosDiagramas }: Dia
   const basePath = pathname?.startsWith('/vale-shop') ? '/vale-shop' : ''
 
   const handleDiagramaChange = (novoSlug: string) => {
-    router.push(`${basePath}/processos/${novoSlug}`)
+    const href = basePath ? `/vale-shop/processos/${novoSlug}` : `/processos/${novoSlug}`
+    router.push(href as Route)
   }
 
   return (

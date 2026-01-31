@@ -132,8 +132,6 @@ export default function InserirProcessoPage() {
             const BpmnJS = (await import('bpmn-js/dist/bpmn-navigated-viewer.development.js')).default;
             viewerRef.current = new BpmnJS({
               container: previewRef.current,
-              width: '100%',
-              height: '100%'
             });
           }
 
@@ -313,7 +311,6 @@ export default function InserirProcessoPage() {
       );
 
       // Limpar formulário
-      setProcessName('');
       setFolders([{ id: 'folder-1', name: '', files: [] }]);
       setShowPreview(false);
       setBpmnXml(null);

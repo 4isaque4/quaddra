@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { FileText } from 'lucide-react';
 
@@ -37,7 +38,7 @@ export default function ProcessCard({ slug, nome }: ProcessCardProps) {
           {displayName}
         </h3>
         <Link 
-          href={`/processos/${slug}`}
+          href={`/processos/${slug}` as Route}
           className="inline-block w-full text-center bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 mt-4"
         >
           Visualizar
