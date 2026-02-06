@@ -65,10 +65,17 @@ export async function GET() {
 
         if (!Array.isArray(arquivos)) continue;
 
-        // Criar pasta local
+        // Verificar se a pasta já existe localmente
+        // Se não existe, significa que foi deletada intencionalmente e não deve ser re-adicionada
         const pastaLocal = join(bpmnDir, pasta.name);
         if (!existsSync(pastaLocal)) {
-          mkdirSync(pastaLocal, { recursive: true });
+          console.log(`[SYNC-GITHUB] Pasta ${pasta.name} não existe localmente - pulando (foi deletada intencionalmente)`);
+          resultados.push({
+            pasta: pasta.name,
+            status: 'ignorado',
+            motivo: 'Pasta não existe localmente (deletada intencionalmente)',
+          });
+          continue; // Pular processos que não existem localmente
         }
 
         // Processar arquivos BPMN principais
