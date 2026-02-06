@@ -21,6 +21,10 @@ interface FolderConfig {
   fileCount: number;
 }
 
+// Configuração para aumentar limite de tamanho do body (10MB)
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 60 segundos
+
 /**
  * POST /api/upload-processo
  * Faz upload de processo para GitHub e arquivos locais
@@ -36,7 +40,7 @@ export async function POST(request: Request) {
     const processName = formData.get('processName') as string;
     const mainFile = formData.get('mainFile') as File;
     const mainFileName = formData.get('mainFileName') as string;
-    let bpmnXml = formData.get('bpmnXml') as string | null;
+    // bpmnXml removido - não é necessário enviar, o arquivo já está no FormData
     const folderStructureJson = formData.get('folderStructure') as string | null;
     const clientType = formData.get('clientType') as string | null; // 'valeshop' ou 'quaddra'
 
