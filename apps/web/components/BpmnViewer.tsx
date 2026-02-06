@@ -388,25 +388,43 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           cursorStyleEl = document.createElement('style');
           cursorStyleEl.innerHTML = `
             /* Normalizar todas as bordas para espessura padrão e aplicar cor do tema */
-            .djs-element .djs-visual > :first-child {
+            /* IMPORTANTE: Não aplicar em conexões - apenas em elementos de forma */
+            .djs-element:not(.djs-connection) .djs-visual > :first-child {
               stroke-width: 2px !important;
-              stroke: ${primaryColor} !important; /* Todas as bordas usam cor do tema */
+              stroke: ${primaryColor} !important; /* Bordas usam cor do tema */
             }
             
-            /* Aplicar cor do tema em todas as conexões/setas */
-            .djs-connection .djs-visual > :first-child {
+            /* Conexões/setas - apenas stroke, SEM fill para evitar triângulos sólidos */
+            .djs-connection .djs-visual > :first-child,
+            .djs-connection .djs-visual path {
               stroke: ${primaryColor} !important;
               stroke-width: 2px !important;
+              fill: none !important; /* CRÍTICO: Sem fill para evitar formas sólidas */
+              fill-opacity: 0 !important;
             }
             
-            /* Aplicar cor do tema em marcadores de setas */
-            .djs-connection .djs-visual > :last-child {
+            /* Garantir que TODOS os elementos dentro de conexões não tenham fill, exceto marcadores */
+            .djs-connection .djs-visual > * {
+              fill: none !important;
+              fill-opacity: 0 !important;
+            }
+            
+            /* Marcadores de setas (pontas) - apenas o último elemento pode ter fill se não for path */
+            .djs-connection .djs-visual > :last-child:not(path) {
               fill: ${primaryColor} !important;
               stroke: ${primaryColor} !important;
+              stroke-width: 1px !important;
             }
             
-            /* Texto padrão dos elementos usa cor escura do tema */
-            .djs-element .djs-visual text:not(.bpmn-selected text) {
+            /* Garantir que paths de conexão nunca tenham fill */
+            .djs-connection .djs-visual path {
+              fill: none !important;
+              fill-opacity: 0 !important;
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Texto padrão dos elementos usa cor escura do tema (não conexões) */
+            .djs-element:not(.djs-connection) .djs-visual text:not(.bpmn-selected text) {
               fill: ${primaryDark} !important;
             }
             
