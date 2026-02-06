@@ -355,12 +355,71 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             });
           };
 
+          // Função auxiliar para criar cor mais clara (para fundo)
+          const lightenColor = (hex: string, percent: number) => {
+            const num = parseInt(hex.replace('#', ''), 16);
+            const r = (num >> 16) & 0xff;
+            const g = (num >> 8) & 0xff;
+            const b = num & 0xff;
+            const newR = Math.min(255, Math.round(r + (255 - r) * percent));
+            const newG = Math.min(255, Math.round(g + (255 - g) * percent));
+            const newB = Math.min(255, Math.round(b + (255 - b) * percent));
+            return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+          };
+
+          // Função auxiliar para criar cor mais escura (para texto)
+          const darkenColor = (hex: string, percent: number) => {
+            const num = parseInt(hex.replace('#', ''), 16);
+            const r = (num >> 16) & 0xff;
+            const g = (num >> 8) & 0xff;
+            const b = num & 0xff;
+            const newR = Math.max(0, Math.round(r * (1 - percent)));
+            const newG = Math.max(0, Math.round(g * (1 - percent)));
+            const newB = Math.max(0, Math.round(b * (1 - percent)));
+            return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+          };
+
+          // Obter cores do tema
+          const primaryColor = theme.colors.primary; // #0367A6 para ValeShop
+          const primaryLight = lightenColor(primaryColor, 0.9); // Azul muito claro para fundo (~90% mais claro)
+          const primaryDark = darkenColor(primaryColor, 0.4); // Azul escuro para texto (~40% mais escuro)
+
           // estilo de cursor/hover/seleção
           cursorStyleEl = document.createElement('style');
           cursorStyleEl.innerHTML = `
-            /* Normalizar todas as bordas para espessura padrão */
+            /* Normalizar todas as bordas para espessura padrão e aplicar cor do tema */
             .djs-element .djs-visual > :first-child {
               stroke-width: 2px !important;
+              stroke: ${primaryColor} !important; /* Todas as bordas usam cor do tema */
+            }
+            
+            /* Aplicar cor do tema em todas as conexões/setas */
+            .djs-connection .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+              stroke-width: 2px !important;
+            }
+            
+            /* Aplicar cor do tema em marcadores de setas */
+            .djs-connection .djs-visual > :last-child {
+              fill: ${primaryColor} !important;
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Texto padrão dos elementos usa cor escura do tema */
+            .djs-element .djs-visual text:not(.bpmn-selected text) {
+              fill: ${primaryDark} !important;
+            }
+            
+            /* Labels padrão usam cor escura do tema */
+            .djs-label text {
+              fill: ${primaryDark} !important;
+            }
+            
+            /* Hover state - usar cor primária mais clara */
+            .djs-element.djs-hover .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+              stroke-width: 2.5px !important;
+              filter: brightness(1.1);
             }
             
             .djs-element:not(.djs-connection) .djs-hit {
@@ -371,31 +430,31 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               fill-opacity: 0;
               pointer-events: all !important;
             }
-            .djs-element.djs-hover .djs-visual > * { filter: none; }
+            .djs-element.djs-hover .djs-visual > * { filter: brightness(1.05); }
             
-            /* Seleção com fundo e borda alaranjada */
+            /* Seleção com fundo e borda usando cor do tema */
             .bpmn-selected .djs-visual > :first-child { 
-              stroke: #f97316 !important;
+              stroke: ${primaryColor} !important;
               stroke-width: 3px !important;
-              fill: #fed7aa !important; /* tom alaranjado claro */
+              fill: ${primaryLight} !important; /* tom claro da cor primária */
             }
             
-            /* Texto laranja mais escuro quando selecionado (sem negrito) */
+            /* Texto mais escuro quando selecionado (sem negrito) */
             .bpmn-selected .djs-visual > text {
-              fill: #c2410c !important; /* laranja mais escuro para contraste */
+              fill: ${primaryDark} !important; /* cor escura para contraste */
               stroke: none !important;
               font-weight: normal !important;
             }
             
             .bpmn-selected .djs-visual > .djs-label {
-              fill: #c2410c !important;
+              fill: ${primaryDark} !important;
               font-weight: normal !important;
             }
             
             .bpmn-selected .djs-visual > [class*="bpmn-icon"] { 
               stroke: none !important;
               filter: none !important;
-              fill: #c2410c !important; /* ícones também em laranja escuro */
+              fill: ${primaryDark} !important; /* ícones também na cor escura */
             }
             
             /* Ajustar texto em tarefas para não sobrepor ícones */
@@ -436,7 +495,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             
             .tooltip {
               background: rgba(255,255,255,0.95);
-              border: 2px solid #f97316;
+              border: 2px solid ${primaryColor};
               border-radius: 6px;
               padding: 8px 12px;
               box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -446,7 +505,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
             .tooltip .title {
               font-weight: 500;
-              color: #f97316;
+              color: ${primaryColor};
               font-size: 14px;
               margin-bottom: 4px;
             }
@@ -498,6 +557,52 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             /* Remover watermark bpmn.io */
             .bjs-powered-by {
               display: none !important;
+            }
+            
+            /* Gateways (losangos) - borda e preenchimento */
+            .djs-element[class*="Gateway"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+              fill: white !important;
+            }
+            
+            /* Eventos (círculos) - borda */
+            .djs-element[class*="Event"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Tarefas (retângulos) - borda */
+            .djs-element[class*="Task"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+              fill: white !important;
+            }
+            
+            /* Pools e Lanes - borda */
+            .djs-element[class*="Participant"] .djs-visual > :first-child,
+            .djs-element[class*="Lane"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Data Objects e Data Stores - borda */
+            .djs-element[class*="DataObject"] .djs-visual > :first-child,
+            .djs-element[class*="DataStore"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Anotações - borda */
+            .djs-element[class*="TextAnnotation"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+            }
+            
+            /* Grupos - borda tracejada */
+            .djs-element[class*="Group"] .djs-visual > :first-child {
+              stroke: ${primaryColor} !important;
+              stroke-dasharray: 5,5 !important;
+            }
+            
+            /* Ícones BPMN - usar cor do tema */
+            .djs-element .djs-visual [class*="bpmn-icon"] {
+              fill: ${primaryColor} !important;
+              stroke: ${primaryColor} !important;
             }
           `;
           document.head.appendChild(cursorStyleEl);
@@ -671,7 +776,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
                 try {
                   overlays.add(el, {
                     position: { bottom: -28, left: 0 },
-                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid #d4d4d4;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:#111;pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);z-index:100;display:block;text-align:center;">${escapeHtml(refName)}</span>`
+                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid ${primaryColor};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:${primaryDark};pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);z-index:100;display:block;text-align:center;">${escapeHtml(refName)}</span>`
                   });
                 } catch (ovErr) {
                   console.warn('Falha ao adicionar label de data store', el.id, ovErr);
@@ -773,7 +878,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         console.error = (window as any).__originalConsoleError;
       }
     };
-  }, [bpmnUrl, descriptionsUrl, contentUrl]);
+  }, [bpmnUrl, descriptionsUrl, contentUrl, theme]);
 
   // Funcoes de edicao
   const handleStartEdit = () => {
