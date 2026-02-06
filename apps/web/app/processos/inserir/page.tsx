@@ -136,7 +136,32 @@ export default function InserirProcessoPage() {
           }
 
           console.log('[PREVIEW] Importando XML no viewer...');
-          await viewerRef.current.importXML(bpmnXml);
+          
+          // Importar XML e ignorar warnings de DataObject (problema comum do Bizagi)
+          try {
+            const result = await viewerRef.current.importXML(bpmnXml);
+            if (result.warnings && result.warnings.length > 0) {
+              // Filtrar apenas warnings críticos (não os de DataObject)
+              const criticalWarnings = result.warnings.filter((w: any) =>
+                !w.message?.includes('DataObject') &&
+                !w.message?.includes('not yet drawn') &&
+                !w.message?.includes('Association')
+              );
+              if (criticalWarnings.length > 0) {
+                console.warn('[PREVIEW] Avisos ao importar:', criticalWarnings);
+              }
+            }
+          } catch (importError: any) {
+            // Ignorar erros de DataObject que não impedem renderização
+            if (importError.message?.includes('DataObject') ||
+                importError.message?.includes('not yet drawn') ||
+                importError.message?.includes('Association')) {
+              console.warn('[PREVIEW] Aviso ignorado (DataObject/Association):', importError.message);
+              // Continuar mesmo com o erro, pois o diagrama pode ser renderizado
+            } else {
+              throw importError;
+            }
+          }
 
           // Aguardar um pouco antes de fazer zoom
           await new Promise(resolve => setTimeout(resolve, 50));
@@ -155,8 +180,15 @@ export default function InserirProcessoPage() {
           }
         } catch (err: any) {
           console.error('[PREVIEW] Erro no useEffect:', err);
-          setError(`Erro ao renderizar diagrama: ${err.message}`);
-          setShowPreview(false);
+          // Só mostrar erro se não for relacionado a DataObject
+          if (!err.message?.includes('DataObject') && 
+              !err.message?.includes('not yet drawn') &&
+              !err.message?.includes('Association')) {
+            setError(`Erro ao renderizar diagrama: ${err.message}`);
+            setShowPreview(false);
+          } else {
+            console.warn('[PREVIEW] Erro de DataObject ignorado, continuando renderização');
+          }
         }
       }
     };
@@ -272,10 +304,11 @@ export default function InserirProcessoPage() {
       const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
       formData.append('clientType', clientType);
 
-      // Adicionar BPMN XML se disponível (para parsing)
-      if (bpmnXml) {
-        formData.append('bpmnXml', bpmnXml);
-      }
+      // Não enviar bpmnXml completo no FormData para evitar erro 413
+      // O arquivo já está sendo enviado e pode ser lido no servidor
+      // if (bpmnXml) {
+      //   formData.append('bpmnXml', bpmnXml);
+      // }
 
       // Adicionar estrutura de pastas
       const folderStructure = folders.map(f => ({
