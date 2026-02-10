@@ -89,21 +89,33 @@ export async function POST(request: Request) {
     let totalFiles = 0;
     const githubFiles: Array<{ path: string; content: string }> = [];
 
-    // Processar pastas personalizadas
+    // Processar pastas personalizadas (agora suporta hierarquia completa + arquivos na raiz)
     for (let i = 0; i < folderStructure.length; i++) {
       const folder = folderStructure[i];
-      const isRootFolder = i === 0; // Primeira pasta é a raiz
-      const folderFiles = formData.getAll(`folder_${folder.name}`) as File[];
+      const folderPath = folder.name; // Caminho completo da pasta (ex: "PastaRaiz/Subpasta1") ou "root" para raiz
+      const isRootFiles = folderPath === 'root'; // Arquivos diretamente na raiz
+      const isRootFolder = !isRootFiles && !folderPath.includes('/'); // Pasta raiz não tem "/"
+      const folderFiles = formData.getAll(`folder_${folderPath}`) as File[];
 
       if (folderFiles.length === 0) {
-        console.log('[UPLOAD] Pasta sem arquivos:', folder.name);
+        console.log('[UPLOAD] Pasta sem arquivos:', folderPath);
         continue;
       }
 
-      console.log(`[UPLOAD] Processando pasta ${i + 1}:`, folder.name, '(', folderFiles.length, 'arquivos)', isRootFolder ? '(RAIZ)' : '');
+      console.log(`[UPLOAD] Processando pasta ${i + 1}:`, folderPath, '(', folderFiles.length, 'arquivos)', isRootFiles ? '(ARQUIVOS NA RAIZ)' : isRootFolder ? '(PASTA RAIZ)' : '');
 
       // Determinar diretório de destino
-      const folderDir = isRootFolder ? bpmnDir : join(bpmnDir, folder.name);
+      let folderDir: string;
+      if (isRootFiles) {
+        // Arquivos diretamente na raiz do processo
+        folderDir = bpmnDir;
+      } else if (isRootFolder) {
+        // Primeira pasta principal
+        folderDir = join(bpmnDir, folderPath);
+      } else {
+        // Subpastas
+        folderDir = join(bpmnDir, folderPath);
+      }
 
       if (!existsSync(folderDir)) {
         mkdirSync(folderDir, { recursive: true });
@@ -130,17 +142,25 @@ export async function POST(request: Request) {
         writeFileSync(filePath, content);
         totalFiles++;
 
-        // Adicionar ao GitHub (raiz ou subpasta)
-        const githubPath = isRootFolder
-          ? `${processName}/${file.name}`
-          : `${processName}/${folder.name}/${file.name}`;
+        // Adicionar ao GitHub
+        let githubPath: string;
+        if (isRootFiles) {
+          // Arquivos na raiz: processName/arquivo.ext
+          githubPath = `${processName}/${file.name}`;
+        } else if (isRootFolder) {
+          // Primeira pasta: processName/PastaRaiz/arquivo.ext
+          githubPath = `${processName}/${folderPath}/${file.name}`;
+        } else {
+          // Subpastas: processName/PastaRaiz/Subpasta/arquivo.ext
+          githubPath = `${processName}/${folderPath}/${file.name}`;
+        }
 
         githubFiles.push({
           path: githubPath,
           content: content.toString('base64'),
         });
 
-        const displayPath = isRootFolder ? file.name : `${folder.name}/${file.name}`;
+        const displayPath = isRootFiles ? file.name : `${folderPath}/${file.name}`;
         console.log('[UPLOAD] Arquivo salvo:', displayPath);
       }
     }
