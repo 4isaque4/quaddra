@@ -77,13 +77,13 @@ jobs:
               # Criar .env.local se não existir (com valores padrão)
               if [ ! -f apps/web/.env.local ]; then
                 echo "⚠️ Criando .env.local com valores padrão..."
-                cat > apps/web/.env.local << 'EOF'
-GITHUB_TOKEN=
-GITHUB_OWNER=4isaque4
-GITHUB_REPO_QUADDRA=vale-shope-processos
-GITHUB_REPO_VALESHOP=vale-shope-processos
-GITHUB_BRANCH=main
-EOF
+                {
+                  echo "GITHUB_TOKEN="
+                  echo "GITHUB_OWNER=4isaque4"
+                  echo "GITHUB_REPO_QUADDRA=vale-shope-processos"
+                  echo "GITHUB_REPO_VALESHOP=vale-shope-processos"
+                  echo "GITHUB_BRANCH=main"
+                } > apps/web/.env.local
                 echo "⚠️ IMPORTANTE: Configure o GITHUB_TOKEN no arquivo /var/www/quaddra/apps/web/.env.local"
               fi
             fi
