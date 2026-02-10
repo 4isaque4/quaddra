@@ -40,6 +40,39 @@ export default function InserirProcessoPage() {
   const [creatingFolder, setCreatingFolder] = useState<string | null>(null); // ID da pasta pai ou null para raiz
   const [newFolderName, setNewFolderName] = useState('');
 
+  const extractHtmlErrorMessage = (html: string): string => {
+    const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+    const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    const cleaned = (titleMatch?.[1] || h1Match?.[1] || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return cleaned || 'O servidor retornou HTML em vez de JSON.';
+  };
+
+  const parseApiResponse = async (response: Response): Promise<any> => {
+    const contentType = response.headers.get('content-type') || '';
+    const rawBody = await response.text();
+
+    if (contentType.includes('application/json')) {
+      try {
+        return JSON.parse(rawBody);
+      } catch {
+        throw new Error('Resposta JSON inválida recebida da API de upload.');
+      }
+    }
+
+    if (rawBody.trim().startsWith('<')) {
+      const htmlError = extractHtmlErrorMessage(rawBody);
+      throw new Error(`Resposta inesperada do servidor (${response.status}): ${htmlError}`);
+    }
+
+    throw new Error(
+      `Resposta inesperada da API (${response.status}) com content-type "${contentType || 'desconhecido'}".`,
+    );
+  };
+
   // Função auxiliar para encontrar pasta por ID recursivamente
   const findFolderById = (folders: FolderConfig[], id: string): FolderConfig | null => {
     for (const folder of folders) {
@@ -514,15 +547,24 @@ export default function InserirProcessoPage() {
       });
 
       // Enviar para API
-      const response = await fetch('/api/upload-processo', {
-        method: 'POST',
-        body: formData,
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-      const result = await response.json();
+      let response: Response;
+      try {
+        response = await fetch('/api/upload-processo', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao fazer upload');
+      const result = await parseApiResponse(response);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || result?.message || 'Erro ao fazer upload');
       }
 
       // Verificar se foi sincronizado com GitHub
@@ -568,7 +610,11 @@ export default function InserirProcessoPage() {
       }, 2000);
     } catch (err: any) {
       console.error('Erro ao inserir processo:', err);
-      setError(err.message || 'Erro ao inserir processo');
+      if (err?.name === 'AbortError') {
+        setError('Timeout ao enviar arquivos. Tente novamente em alguns instantes.');
+      } else {
+        setError(err?.message || 'Erro ao inserir processo');
+      }
     } finally {
       setLoading(false);
     }

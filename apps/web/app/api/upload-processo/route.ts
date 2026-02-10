@@ -1,319 +1,230 @@
-import { NextResponse } from 'next/server';
-import { Octokit } from '@octokit/rest';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
-import { parseBizagiBpmn, convertToContentFormat, extractPerformers } from '@/../../apps/api/lib/bizagi-parser';
-import { convertBpmToBpmn, validateBpmnXml } from '@/../../apps/api/lib/bpm-converter';
+import { NextResponse } from 'next/server'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
+import {
+  GITHUB_BRANCH,
+  GITHUB_OWNER,
+  GITHUB_REPO_QUADDRA,
+  GITHUB_REPO_VALESHOP,
+  octokit,
+  withRetry,
+} from '@/lib/process-storage'
 
-// Configuração do GitHub
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
-const GITHUB_REPO_QUADDRA = process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
-const GITHUB_REPO_VALESHOP = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos';
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
-
-const octokit = new Octokit({
-  auth: GITHUB_TOKEN,
-});
-
-// Tipo para estrutura de pastas
-interface FolderConfig {
-  name: string;
-  fileCount: number;
+type FolderConfig = {
+  name: string
+  fileCount: number
 }
 
-// Configuração para aumentar limite de tamanho do body (10MB)
-export const runtime = 'nodejs';
-export const maxDuration = 60; // 60 segundos
+type UploadEntry = {
+  localPath: string
+  githubPath: string
+  contentBase64: string
+}
 
-/**
- * POST /api/upload-processo
- * Faz upload de processo para GitHub e arquivos locais
- * Suporta arquivos .bpm (com conversão automática) e estrutura de pastas flexível
- */
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+function sanitizeSegment(value: string): string {
+  return value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/[<>:"|?*]/g, '-')
+    .replace(/\s+/g, ' ')
+}
+
+function sanitizeRelativePath(value: string): string {
+  const cleaned = value
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => sanitizeSegment(part))
+    .filter((part) => part && part !== '.' && part !== '..')
+    .join('/')
+
+  return cleaned.replace(/^\/+|\/+$/g, '')
+}
+
+function jsonError(message: string, status = 400, details?: unknown) {
+  return NextResponse.json({ success: false, error: message, details }, { status })
+}
+
 export async function POST(request: Request) {
   try {
-    console.log('[UPLOAD] Iniciando upload de processo');
+    const formData = await request.formData()
+    const processNameRaw = (formData.get('processName') as string | null) || ''
+    const processName = sanitizeSegment(processNameRaw)
+    const mainFile = formData.get('mainFile') as File | null
+    const clientType = ((formData.get('clientType') as string | null) || 'quaddra').toLowerCase()
+    const repo = clientType === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA
 
-    const formData = await request.formData();
+    if (!processName) return jsonError('Nome do processo é obrigatório', 400)
+    if (!mainFile) return jsonError('Arquivo principal é obrigatório', 400)
 
-    // Extrair dados básicos
-    const processName = formData.get('processName') as string;
-    const mainFile = formData.get('mainFile') as File;
-    const mainFileName = formData.get('mainFileName') as string;
-    // bpmnXml removido - não é necessário enviar, o arquivo já está no FormData
-    const folderStructureJson = formData.get('folderStructure') as string | null;
-    const clientType = formData.get('clientType') as string | null; // 'valeshop' ou 'quaddra'
+    const folderStructureRaw = formData.get('folderStructure') as string | null
+    let folderStructure: FolderConfig[] = []
 
-    // Determinar repositório baseado no cliente
-    const REPO_NAME = clientType === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA;
-    
-    console.log('[UPLOAD] Cliente:', clientType || 'quaddra', '- Repositório:', REPO_NAME);
-
-    if (!processName || !mainFile) {
-      console.error('[UPLOAD] Dados obrigatórios faltando');
-      return NextResponse.json(
-        { error: 'Nome do processo e arquivo principal são obrigatórios' },
-        { status: 400 }
-      );
-    }
-
-    // Parse da estrutura de pastas
-    let folderStructure: FolderConfig[] = [];
-    if (folderStructureJson) {
+    if (folderStructureRaw) {
       try {
-        folderStructure = JSON.parse(folderStructureJson);
-        console.log('[UPLOAD] Estrutura:', folderStructure.length, 'pasta(s)');
-      } catch (e) {
-        console.error('[UPLOAD] Erro ao parsear estrutura:', e);
+        const parsed = JSON.parse(folderStructureRaw)
+        if (Array.isArray(parsed)) {
+          folderStructure = parsed
+            .map((item) => ({
+              name: sanitizeRelativePath(String(item?.name || '')),
+              fileCount: Number(item?.fileCount || 0),
+            }))
+            .filter((item) => item.name || item.fileCount > 0)
+        }
+      } catch (error: any) {
+        return jsonError('Estrutura de pastas inválida', 400, error?.message)
       }
     }
 
-    console.log('[UPLOAD] Processo:', processName);
-    console.log('[UPLOAD] Arquivo:', mainFileName);
+    const storageRoot = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
+    if (!existsSync(storageRoot)) mkdirSync(storageRoot, { recursive: true })
 
-    // Criar estrutura local
-    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn', processName);
-    const contentDir = join(process.cwd(), '..', 'api', 'storage', 'content');
+    const uploadEntries: UploadEntry[] = []
+    const duplicateGuard = new Set<string>()
 
-    try {
-      if (!existsSync(bpmnDir)) {
-        mkdirSync(bpmnDir, { recursive: true });
-      }
-      if (!existsSync(contentDir)) {
-        mkdirSync(contentDir, { recursive: true });
-      }
-    } catch (dirError: any) {
-      throw new Error(`Erro ao criar diretórios: ${dirError.message}`);
-    }
+    for (const folder of folderStructure) {
+      const folderName = folder.name || 'root'
+      const files = formData.getAll(`folder_${folderName}`) as File[]
+      if (!files.length) continue
 
-    let totalFiles = 0;
-    const githubFiles: Array<{ path: string; content: string }> = [];
-
-    // Processar pastas personalizadas (agora suporta hierarquia completa + arquivos na raiz)
-    for (let i = 0; i < folderStructure.length; i++) {
-      const folder = folderStructure[i];
-      const folderPath = folder.name; // Caminho completo da pasta (ex: "PastaRaiz/Subpasta1") ou "root" para raiz
-      const isRootFiles = folderPath === 'root'; // Arquivos diretamente na raiz
-      const isRootFolder = !isRootFiles && !folderPath.includes('/'); // Pasta raiz não tem "/"
-      const folderFiles = formData.getAll(`folder_${folderPath}`) as File[];
-
-      if (folderFiles.length === 0) {
-        console.log('[UPLOAD] Pasta sem arquivos:', folderPath);
-        continue;
-      }
-
-      console.log(`[UPLOAD] Processando pasta ${i + 1}:`, folderPath, '(', folderFiles.length, 'arquivos)', isRootFiles ? '(ARQUIVOS NA RAIZ)' : isRootFolder ? '(PASTA RAIZ)' : '');
-
-      // Determinar diretório de destino
-      let folderDir: string;
-      if (isRootFiles) {
-        // Arquivos diretamente na raiz do processo
-        folderDir = bpmnDir;
-      } else if (isRootFolder) {
-        // Primeira pasta principal
-        folderDir = join(bpmnDir, folderPath);
-      } else {
-        // Subpastas
-        folderDir = join(bpmnDir, folderPath);
-      }
-
-      if (!existsSync(folderDir)) {
-        mkdirSync(folderDir, { recursive: true });
-      }
-
-      // Processar cada arquivo
-      for (const file of folderFiles) {
-        const isText = file.name.endsWith('.bpmn') ||
-          file.name.endsWith('.txt') ||
-          file.name.endsWith('.json') ||
-          file.name.endsWith('.xml');
-
-        let content: Buffer;
-        if (isText) {
-          const text = await file.text();
-          content = Buffer.from(text, 'utf-8');
-        } else {
-          const buffer = await file.arrayBuffer();
-          content = Buffer.from(buffer);
+      for (const file of files) {
+        const safeFileName = sanitizeSegment(file.name)
+        if (!safeFileName.toLowerCase().endsWith('.bpmn')) {
+          console.warn('[UPLOAD] arquivo ignorado (não BPMN):', safeFileName)
+          continue
         }
 
-        // Salvar localmente
-        const filePath = join(folderDir, file.name);
-        writeFileSync(filePath, content);
-        totalFiles++;
+        const fileBuffer = Buffer.from(await file.arrayBuffer())
+        const targetFolder = folderName === 'root' ? sanitizeRelativePath(processName) : sanitizeRelativePath(folderName)
+        const githubPath = `${targetFolder}/${safeFileName}`.replace(/\/+/g, '/')
 
-        // Adicionar ao GitHub
-        // IMPORTANTE: Se processName já é igual ao folderPath, não duplicar a estrutura
-        let githubPath: string;
-        if (isRootFiles) {
-          // Arquivos na raiz: processName/arquivo.ext
-          githubPath = `${processName}/${file.name}`;
-        } else {
-          // Para pastas: se processName já é igual ao folderPath, usar apenas folderPath
-          // Caso contrário, usar processName/folderPath
-          if (processName === folderPath || folderPath.startsWith(processName + '/')) {
-            // Se são iguais ou folderPath já inclui processName, usar apenas folderPath
-            githubPath = `${folderPath}/${file.name}`;
-          } else {
-            // Caso contrário: processName/folderPath/arquivo.ext
-            githubPath = `${processName}/${folderPath}/${file.name}`;
-          }
+        if (!targetFolder) return jsonError('Nome de pasta inválido detectado no upload', 400)
+        if (duplicateGuard.has(githubPath)) {
+          return jsonError(`Arquivo duplicado no payload: ${githubPath}`, 400)
         }
+        duplicateGuard.add(githubPath)
 
-        githubFiles.push({
-          path: githubPath,
-          content: content.toString('base64'),
-        });
+        const localPath = join(storageRoot, ...githubPath.split('/'))
+        mkdirSync(dirname(localPath), { recursive: true })
+        writeFileSync(localPath, fileBuffer)
 
-        const displayPath = isRootFiles ? file.name : `${folderPath}/${file.name}`;
-        console.log('[UPLOAD] Arquivo salvo:', displayPath);
-      }
-    }
-
-    // 4. Fazer commit e push no GitHub
-    console.log('[UPLOAD] Enviando para GitHub');
-    console.log('[UPLOAD] Token configurado:', GITHUB_TOKEN ? 'SIM' : 'NÃO');
-    console.log('[UPLOAD] Repositório:', REPO_NAME);
-    console.log('[UPLOAD] Owner:', GITHUB_OWNER);
-    console.log('[UPLOAD] Branch:', GITHUB_BRANCH);
-    console.log('[UPLOAD] Arquivos para enviar:', githubFiles.length);
-
-    try {
-      // Verificar se o token está configurado
-      if (!GITHUB_TOKEN) {
-        console.warn('[UPLOAD] ⚠️ GitHub token não configurado');
-        return NextResponse.json({
-          success: false,
-          message: 'Processo salvo localmente, mas GitHub token não está configurado. Configure GITHUB_TOKEN no .env.local',
-          processName,
-          totalArquivos: totalFiles,
-          githubSynced: false,
-          githubError: 'Token não configurado',
-          folderStructure,
-        });
-      }
-
-      // Obter SHA da branch principal
-      console.log('[UPLOAD] Obtendo referência da branch...');
-      const { data: ref } = await octokit.git.getRef({
-        owner: GITHUB_OWNER,
-        repo: REPO_NAME,
-        ref: `heads/${GITHUB_BRANCH}`,
-      });
-
-      const currentCommitSha = ref.object.sha;
-      console.log('[UPLOAD] ✅ Referência obtida:', currentCommitSha.substring(0, 7));
-
-      // Obter árvore do commit atual
-      const { data: currentCommit } = await octokit.git.getCommit({
-        owner: GITHUB_OWNER,
-        repo: REPO_NAME,
-        commit_sha: currentCommitSha,
-      });
-
-      const currentTreeSha = currentCommit.tree.sha;
-
-      // Criar blobs para cada arquivo
-      console.log('[UPLOAD] Criando blobs:', githubFiles.length, 'arquivos');
-      const blobs = await Promise.all(
-        githubFiles.map(async (file, index) => {
-          try {
-            console.log(`[UPLOAD] Criando blob ${index + 1}/${githubFiles.length}: ${file.path}`);
-            const { data: blob } = await octokit.git.createBlob({
-              owner: GITHUB_OWNER,
-              repo: REPO_NAME,
-              content: file.content,
-              encoding: 'base64',
-            });
-            console.log(`[UPLOAD] ✅ Blob criado: ${file.path} (${blob.sha.substring(0, 7)})`);
-            return {
-              path: file.path,
-              mode: '100644' as const,
-              type: 'blob' as const,
-              sha: blob.sha,
-            };
-          } catch (blobError: any) {
-            console.error(`[UPLOAD] ❌ Erro ao criar blob ${file.path}:`, blobError.message);
-            throw new Error(`Erro ao criar blob para ${file.path}: ${blobError.message}`);
-          }
+        uploadEntries.push({
+          localPath,
+          githubPath,
+          contentBase64: fileBuffer.toString('base64'),
         })
-      );
-      console.log('[UPLOAD] ✅ Todos os blobs criados:', blobs.length);
+      }
+    }
 
-      // Criar nova árvore
-      console.log('[UPLOAD] Criando árvore com', blobs.length, 'arquivos...');
-      const { data: newTree } = await octokit.git.createTree({
-        owner: GITHUB_OWNER,
-        repo: REPO_NAME,
-        base_tree: currentTreeSha,
-        tree: blobs,
-      });
-      console.log('[UPLOAD] ✅ Árvore criada:', newTree.sha.substring(0, 7));
+    if (!uploadEntries.length) {
+      return jsonError('Nenhum arquivo BPMN válido foi enviado', 400)
+    }
 
-      // Criar commit
-      console.log('[UPLOAD] Criando commit...');
-      const commitMessage = `feat: adicionar processo ${processName}\n\n- ${totalFiles} arquivo(s) adicionado(s)`;
-      const { data: newCommit } = await octokit.git.createCommit({
-        owner: GITHUB_OWNER,
-        repo: REPO_NAME,
-        message: commitMessage,
-        tree: newTree.sha,
-        parents: [currentCommitSha],
-      });
-      console.log('[UPLOAD] ✅ Commit criado:', newCommit.sha.substring(0, 7));
-
-      // Atualizar referência da branch
-      console.log('[UPLOAD] Atualizando branch', GITHUB_BRANCH, '...');
-      await octokit.git.updateRef({
-        owner: GITHUB_OWNER,
-        repo: REPO_NAME,
-        ref: `heads/${GITHUB_BRANCH}`,
-        sha: newCommit.sha,
-      });
-
-      console.log('[UPLOAD] ✅ Push concluído com sucesso!');
-    } catch (gitError: any) {
-      console.error('[UPLOAD] ❌ Erro no GitHub:', gitError.message);
-      console.error('[UPLOAD] Erro completo:', JSON.stringify(gitError, null, 2));
-      console.error('[UPLOAD] Status:', gitError.status);
-      console.error('[UPLOAD] Response:', gitError.response?.data);
-
-      // Salvar localmente mesmo se o GitHub falhar
-      console.log('[UPLOAD] Arquivos salvos localmente');
+    if (!octokit) {
       return NextResponse.json({
         success: true,
-        message: `Processo salvo localmente, mas falhou ao enviar para GitHub: ${gitError.message}`,
+        message: 'Arquivos salvos localmente. GitHub não configurado.',
         processName,
-        totalArquivos: totalFiles,
+        totalArquivos: uploadEntries.length,
         githubSynced: false,
-        githubError: gitError.message,
-        githubErrorDetails: gitError.response?.data || gitError,
-        folderStructure,
-      });
+        githubError: 'GITHUB_TOKEN não configurado',
+      })
     }
 
-    console.log('[UPLOAD] Upload concluído');
-    console.log('[UPLOAD] Total:', totalFiles, 'arquivos');
+    const { data: refData } = await withRetry(
+      () => octokit!.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+      `upload:getRef:${repo}`,
+    )
 
-    return NextResponse.json({
-      success: true,
-      message: 'Processo inserido e sincronizado com GitHub',
-      processName,
-      totalArquivos: totalFiles,
-      githubSynced: true,
-      folderStructure,
-    });
-  } catch (error: any) {
-    console.error('[UPLOAD] ❌ Erro fatal:', error);
-    console.error('[UPLOAD] Stack:', error.stack);
+    const { data: commitData } = await withRetry(
+      () => octokit!.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: refData.object.sha }),
+      `upload:getCommit:${repo}`,
+    )
+
+    const treeItems = await Promise.all(
+      uploadEntries.map(async (entry) => {
+        const { data: blob } = await withRetry(
+          () =>
+            octokit!.git.createBlob({
+              owner: GITHUB_OWNER,
+              repo,
+              content: entry.contentBase64,
+              encoding: 'base64',
+            }),
+          `upload:createBlob:${repo}:${entry.githubPath}`,
+        )
+
+        return {
+          path: entry.githubPath,
+          mode: '100644' as const,
+          type: 'blob' as const,
+          sha: blob.sha,
+        }
+      }),
+    )
+
+    const { data: newTree } = await withRetry(
+      () =>
+        octokit!.git.createTree({
+          owner: GITHUB_OWNER,
+          repo,
+          base_tree: commitData.tree.sha,
+          tree: treeItems,
+        }),
+      `upload:createTree:${repo}`,
+    )
+
+    const { data: newCommit } = await withRetry(
+      () =>
+        octokit!.git.createCommit({
+          owner: GITHUB_OWNER,
+          repo,
+          message: `feat: upload de processo ${processName} (${uploadEntries.length} arquivo(s))`,
+          tree: newTree.sha,
+          parents: [refData.object.sha],
+        }),
+      `upload:createCommit:${repo}`,
+    )
+
+    await withRetry(
+      () =>
+        octokit!.git.updateRef({
+          owner: GITHUB_OWNER,
+          repo,
+          ref: `heads/${GITHUB_BRANCH}`,
+          sha: newCommit.sha,
+        }),
+      `upload:updateRef:${repo}`,
+    )
+
     return NextResponse.json(
       {
-        error: 'Erro ao fazer upload do processo',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        success: true,
+        message: 'Processo inserido e sincronizado com GitHub',
+        processName,
+        totalArquivos: uploadEntries.length,
+        githubSynced: true,
+        uploadedPaths: uploadEntries.map((entry) => entry.githubPath),
       },
-      { status: 500 }
-    );
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+        },
+      },
+    )
+  } catch (error: any) {
+    console.error('[UPLOAD] erro fatal:', error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Erro ao fazer upload do processo',
+        details: error?.message || 'erro desconhecido',
+      },
+      { status: 500 },
+    )
   }
 }

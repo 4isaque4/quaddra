@@ -62,5 +62,5 @@ export const revalidate = 0
 
 export default async function ValeShopProcessosPage() {
   const processos = await getProcessos()
-  return <ProcessosPageClient processosIniciais={processos} basePath="/vale-shop" />
+  return <ProcessosPageClient processosIniciais={processos} />
 }
