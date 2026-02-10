@@ -69,9 +69,29 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Restaurar .env (se existir backup)
+            # Restaurar .env (se existir backup) ou criar novo com variáveis mínimas
             if [ -f /tmp/.env.local.backup ]; then
               cp /tmp/.env.local.backup apps/web/.env.local
+              echo "✅ .env.local restaurado do backup"
+            else
+              # Criar .env.local se não existir (com valores padrão)
+              if [ ! -f apps/web/.env.local ]; then
+                echo "⚠️ Criando .env.local com valores padrão..."
+                cat > apps/web/.env.local << 'EOF'
+GITHUB_TOKEN=
+GITHUB_OWNER=4isaque4
+GITHUB_REPO_QUADDRA=vale-shope-processos
+GITHUB_REPO_VALESHOP=vale-shope-processos
+GITHUB_BRANCH=main
+EOF
+                echo "⚠️ IMPORTANTE: Configure o GITHUB_TOKEN no arquivo /var/www/quaddra/apps/web/.env.local"
+              fi
+            fi
+            
+            # Verificar se GITHUB_TOKEN está configurado
+            if grep -q "GITHUB_TOKEN=$" apps/web/.env.local || ! grep -q "GITHUB_TOKEN=" apps/web/.env.local; then
+              echo "⚠️ AVISO: GITHUB_TOKEN não está configurado no .env.local do servidor!"
+              echo "⚠️ Configure manualmente via SSH: nano /var/www/quaddra/apps/web/.env.local"
             fi
             
             # Instalar dependências
