@@ -577,15 +577,11 @@ export default function InserirProcessoPage() {
         if (!result.githubSynced) {
           const errorMsg = result.githubError
             ? `Erro ao enviar para GitHub: ${result.githubError}`
-            : 'Token do GitHub não configurado. Configure GITHUB_TOKEN no arquivo .env.local`;
+            : 'Token do GitHub não configurado. Configure GITHUB_TOKEN no arquivo .env.local';
 
           setError(
-            `Processo "${processName}" foi salvo localmente, mas não foi enviado para o GitHub.
-
-` +
-            `${errorMsg}
-
-` +
+            `Processo "${processName}" foi salvo localmente, mas não foi enviado para o GitHub.\n\n` +
+            `${errorMsg}\n\n` +
             `Verifique a configuração do token do GitHub.`
           );
           setLoading(false);
