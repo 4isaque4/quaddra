@@ -43,6 +43,7 @@ jobs:
           port: 22
           timeout: 300s
           command_timeout: 600s
+          use_insecure_cipher: false
           script: |
             echo "🚀 Iniciando deploy..."
             echo "📡 Verificando conectividade com o servidor..."
