@@ -4,13 +4,16 @@ import { useState, useEffect } from 'react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { Header, Footer } from '@/components';
+import ProcessOrganizationModal from '@/components/ProcessOrganizationModal';
 import { useTheme } from '@/contexts/ThemeContext';
+import { FolderTree } from 'lucide-react';
 
 interface ProcessoItem {
   file: string;
   slug: string;
   nome: string;
   categoria: string;
+  folderPath?: string;
 }
 
 interface ProcessosPageClientProps {
@@ -37,6 +40,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
   const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
   const [nomesCustomizados, setNomesCustomizados] = useState<Record<string, string>>({});
+  const [isOrganizationModalOpen, setIsOrganizationModalOpen] = useState(false);
 
   // Carregar nomes customizados do localStorage
   useEffect(() => {
@@ -130,9 +134,27 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
         <div className="container py-12">
           {/* Header simples e direto */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              Processos
-            </h1>
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-3xl font-bold text-gray-900">
+                Processos
+              </h1>
+              <button
+                onClick={() => setIsOrganizationModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors font-medium"
+                style={{
+                  backgroundColor: theme.colors.primary,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.colors.primary;
+                }}
+              >
+                <FolderTree className="w-5 h-5" />
+                Organizar
+              </button>
+            </div>
 
             {/* Barra de Busca compacta */}
             <div className="max-w-xl">
@@ -291,6 +313,17 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
           </div>
         </div>
       )}
+
+      {/* Modal de Organização */}
+      <ProcessOrganizationModal
+        isOpen={isOrganizationModalOpen}
+        onClose={() => setIsOrganizationModalOpen(false)}
+        processos={processos}
+        onUpdate={() => {
+          // Recarregar processos
+          window.location.reload();
+        }}
+      />
 
       {/* Modal de Confirmação - Minimalista */}
       {processoADeletar && (
