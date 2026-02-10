@@ -43,8 +43,6 @@ jobs:
           port: 22
           timeout: 300s
           command_timeout: 600s
-          retry: 3
-          retry_interval: 10s
           script: |
             echo "🚀 Iniciando deploy..."
             echo "📡 Verificando conectividade com o servidor..."
