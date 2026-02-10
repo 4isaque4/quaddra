@@ -9,8 +9,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '50mb',
     },
-    // Para proxy reverso (se houver nginx/apache na frente)
-    proxyClientMaxBodySize: '50mb',
   },
   // Otimizações para produção
   compress: true,
