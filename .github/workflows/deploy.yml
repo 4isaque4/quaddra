@@ -28,6 +28,11 @@ jobs:
           cd apps/web
           npm run build
 
+      - name: Check VPS connectivity
+        run: |
+          echo "🔍 Verificando conectividade com VPS..."
+          timeout 10 bash -c "echo > /dev/tcp/${{ secrets.VPS_HOST }}/22" 2>/dev/null && echo "✅ Servidor acessível" || echo "⚠️ Servidor pode estar inacessível (continuando mesmo assim...)"
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -35,11 +40,24 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
+          timeout: 300s
+          command_timeout: 600s
+          retry: 3
+          retry_interval: 10s
           script: |
             echo "🚀 Iniciando deploy..."
+            echo "📡 Verificando conectividade com o servidor..."
+            
+            # Verificar se o servidor está acessível
+            if ! ping -c 3 localhost > /dev/null 2>&1; then
+              echo "⚠️ Aviso: Problemas de conectividade detectados"
+            fi
             
             # Navegar para o diretório do projeto
-            cd /var/www/quaddra
+            cd /var/www/quaddra || {
+              echo "❌ Erro: Diretório /var/www/quaddra não encontrado!"
+              exit 1
+            }
             
             # Fazer backup rápido do .env (se existir)
             if [ -f apps/web/.env.local ]; then
