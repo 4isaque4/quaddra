@@ -517,7 +517,8 @@ export default function InserirProcessoPage() {
         `Processo "${processName}" inserido com sucesso! ` +
         (result.elementsExtracted > 0
           ? `${result.elementsExtracted} elementos extraídos automaticamente.`
-          : '')
+          : '') +
+        ' Redirecionando para a página de processos...'
       );
 
       // Limpar formulário
@@ -533,6 +534,11 @@ export default function InserirProcessoPage() {
       fileInputs.forEach((input: any) => {
         input.value = '';
       });
+
+      // Redirecionar para a página de processos após 2 segundos
+      setTimeout(() => {
+        window.location.href = `${basePath}/processos`;
+      }, 2000);
     } catch (err: any) {
       console.error('Erro ao inserir processo:', err);
       setError(err.message || 'Erro ao inserir processo');
