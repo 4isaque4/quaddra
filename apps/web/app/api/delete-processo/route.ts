@@ -424,76 +424,77 @@ export async function DELETE(request: Request) {
       if (folderToDelete && !filePathFound) {
         console.log('[DELETE] ⚠️ Deletando pasta inteira do GitHub (fallback):', folderToDelete);
 
-      // Obter referência do branch
-      const { data: refData } = await octokit.git.getRef({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        ref: `heads/${GITHUB_BRANCH}`
-      });
+        // Obter referência do branch
+        const { data: refData } = await octokit.git.getRef({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          ref: `heads/${GITHUB_BRANCH}`
+        });
 
-      const latestCommitSha = refData.object.sha;
+        const latestCommitSha = refData.object.sha;
 
-      // Obter árvore do commit
-      const { data: commitData } = await octokit.git.getCommit({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        commit_sha: latestCommitSha
-      });
+        // Obter árvore do commit
+        const { data: commitData } = await octokit.git.getCommit({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          commit_sha: latestCommitSha
+        });
 
-      const baseTreeSha = commitData.tree.sha;
+        const baseTreeSha = commitData.tree.sha;
 
-      // Obter árvore completa recursivamente
-      const { data: currentTree } = await octokit.git.getTree({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        tree_sha: baseTreeSha,
-        recursive: 'true'
-      });
+        // Obter árvore completa recursivamente
+        const { data: currentTree } = await octokit.git.getTree({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          tree_sha: baseTreeSha,
+          recursive: 'true'
+        });
 
-      // Filtrar arquivos que não estão na pasta a deletar
-      const newTree = currentTree.tree
-        .filter(item => !item.path?.startsWith(folderToDelete + '/'))
-        .map(item => ({
-          path: item.path!,
-          mode: item.mode as '100644' | '100755' | '040000' | '160000' | '120000',
-          type: item.type as 'blob' | 'tree' | 'commit',
-          sha: item.sha!
-        }));
+        // Filtrar arquivos que não estão na pasta a deletar
+        const newTree = currentTree.tree
+          .filter(item => !item.path?.startsWith(folderToDelete + '/'))
+          .map(item => ({
+            path: item.path!,
+            mode: item.mode as '100644' | '100755' | '040000' | '160000' | '120000',
+            type: item.type as 'blob' | 'tree' | 'commit',
+            sha: item.sha!
+          }));
 
-      // Criar nova árvore
-      const { data: newTreeData } = await octokit.git.createTree({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        tree: newTree,
-        base_tree: baseTreeSha
-      });
+        // Criar nova árvore
+        const { data: newTreeData } = await octokit.git.createTree({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          tree: newTree,
+          base_tree: baseTreeSha
+        });
 
-      // Criar commit
-      const { data: newCommit } = await octokit.git.createCommit({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        message: `chore: deletar processo ${folderToDelete}`,
-        tree: newTreeData.sha,
-        parents: [latestCommitSha]
-      });
+        // Criar commit
+        const { data: newCommit } = await octokit.git.createCommit({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          message: `chore: deletar processo ${folderToDelete}`,
+          tree: newTreeData.sha,
+          parents: [latestCommitSha]
+        });
 
-      // Atualizar referência
-      await octokit.git.updateRef({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        ref: `heads/${GITHUB_BRANCH}`,
-        sha: newCommit.sha
-      });
+        // Atualizar referência
+        await octokit.git.updateRef({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          ref: `heads/${GITHUB_BRANCH}`,
+          sha: newCommit.sha
+        });
 
-      console.log('[DELETE] Processo deletado do GitHub com sucesso');
+        console.log('[DELETE] Processo deletado do GitHub com sucesso');
 
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Processo deletado com sucesso',
-        deletedLocal,
-        deletedGitHub: true,
-        folder: folderToDelete
-      });
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Processo deletado com sucesso',
+          deletedLocal,
+          deletedGitHub: true,
+          folder: folderToDelete
+        });
+      }
 
     } catch (githubError: any) {
       console.error('[DELETE] ❌ Erro ao deletar do GitHub:', githubError.message);
