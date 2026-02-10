@@ -73,6 +73,27 @@ export default function InserirProcessoPage() {
     );
   };
 
+  const buildUploadFormData = (params: {
+    processName: string;
+    clientType: string;
+    folderPath: string;
+    files: File[];
+  }): FormData => {
+    const { processName, clientType, folderPath, files } = params;
+    const formData = new FormData();
+    formData.append('processName', processName);
+    formData.append('clientType', clientType);
+
+    const normalizedPath = folderPath || 'root';
+    formData.append('folderStructure', JSON.stringify([{ name: normalizedPath, fileCount: files.length }]));
+
+    files.forEach((file) => {
+      formData.append(`folder_${normalizedPath}`, file);
+    });
+
+    return formData;
+  };
+
   // Função auxiliar para encontrar pasta por ID recursivamente
   const findFolderById = (folders: FolderConfig[], id: string): FolderConfig | null => {
     for (const folder of folders) {
@@ -472,13 +493,11 @@ export default function InserirProcessoPage() {
 
       // Encontrar arquivo principal (primeiro .bpmn encontrado)
       let mainFile: File | null = null;
-      let mainFileName = '';
 
       // Procurar na raiz primeiro
       const rootBpmn = rootFiles.find(f => f.name.endsWith('.bpmn'));
       if (rootBpmn) {
         mainFile = rootBpmn;
-        mainFileName = rootBpmn.name;
       } else {
         // Procurar nas pastas
         const findFirstBpmn = (folders: FolderConfig[]): File | null => {
@@ -491,33 +510,23 @@ export default function InserirProcessoPage() {
           return null;
         };
         mainFile = findFirstBpmn(filteredMainFolders);
-        if (mainFile) mainFileName = mainFile.name;
       }
 
       // Se não encontrou .bpmn, usar o primeiro arquivo disponível
       if (!mainFile) {
         mainFile = rootFiles.length > 0 ? rootFiles[0] : (filteredMainFolders[0]?.files[0] || null);
-        if (mainFile) mainFileName = mainFile.name;
       }
 
       if (!mainFile) {
         throw new Error('Nenhum arquivo encontrado');
       }
 
-      // Criar FormData
-      const formData = new FormData();
-      formData.append('processName', processName);
-      formData.append('mainFile', mainFile);
-      formData.append('mainFileName', mainFileName);
-      
       // Adicionar tipo de cliente
       const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
-      formData.append('clientType', clientType);
 
       // Coletar estrutura completa
       const folderStructure: Array<{ path: string, name: string, files: File[] }> = [];
-      
-      // Adicionar arquivos da raiz como uma "pasta" especial
+
       if (rootFiles.length > 0) {
         folderStructure.push({
           path: '',
@@ -526,68 +535,69 @@ export default function InserirProcessoPage() {
         });
       }
 
-      // Adicionar todas as pastas principais e suas subpastas (apenas pastas não vazias)
       filteredMainFolders.forEach(folder => {
         folderStructure.push(...flattenFolderStructure(folder));
       });
 
-      // Adicionar estrutura de pastas (formato compatível com API)
-      const folderStructureForAPI = folderStructure.map(f => ({
-        name: f.path || 'root', // Caminho completo da pasta ou 'root' para raiz
-        fileCount: f.files.length
-      }));
-      formData.append('folderStructure', JSON.stringify(folderStructureForAPI));
+      // Upload em lotes para evitar 413 (Request Entity Too Large)
+      let totalUploadedFiles = 0;
+      for (const folder of folderStructure) {
+        if (!folder.files.length) continue;
 
-      // Adicionar arquivos de cada pasta usando o caminho completo
-      folderStructure.forEach(folder => {
-        folder.files.forEach(file => {
-          const pathKey = folder.path || 'root';
-          formData.append(`folder_${pathKey}`, file);
+        const folderPath = folder.path || 'root';
+        const formData = buildUploadFormData({
+          processName,
+          clientType,
+          folderPath,
+          files: folder.files,
         });
-      });
 
-      // Enviar para API
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 90000);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-      let response: Response;
-      try {
-        response = await fetch('/api/upload-processo', {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+        let response: Response;
+        try {
+          response = await fetch('/api/upload-processo', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
-      const result = await parseApiResponse(response);
+        const result = await parseApiResponse(response);
 
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.error || result?.message || 'Erro ao fazer upload');
-      }
+        if (!response.ok || !result?.success) {
+          throw new Error(
+            `Falha no lote da pasta "${folderPath}": ${result?.error || result?.message || 'erro desconhecido'}`,
+          );
+        }
 
-      // Verificar se foi sincronizado com GitHub
-      if (!result.githubSynced) {
-        const errorMsg = result.githubError 
-          ? `Erro ao enviar para GitHub: ${result.githubError}`
-          : 'Token do GitHub não configurado. Configure GITHUB_TOKEN no arquivo .env.local';
-        
-        setError(
-          `Processo "${processName}" foi salvo localmente, mas não foi enviado para o GitHub.\n\n` +
-          `${errorMsg}\n\n` +
-          `Verifique a configuração do token do GitHub.`
-        );
-        setLoading(false);
-        return;
+        if (!result.githubSynced) {
+          const errorMsg = result.githubError
+            ? `Erro ao enviar para GitHub: ${result.githubError}`
+            : 'Token do GitHub não configurado. Configure GITHUB_TOKEN no arquivo .env.local`;
+
+          setError(
+            `Processo "${processName}" foi salvo localmente, mas não foi enviado para o GitHub.
+
+` +
+            `${errorMsg}
+
+` +
+            `Verifique a configuração do token do GitHub.`
+          );
+          setLoading(false);
+          return;
+        }
+
+        totalUploadedFiles += Number(result?.totalArquivos || folder.files.length);
       }
 
       setMessage(
-        `Processo "${processName}" inserido com sucesso e sincronizado com GitHub! ` +
-        (result.elementsExtracted > 0
-          ? `${result.elementsExtracted} elementos extraídos automaticamente.`
-          : '') +
-        ' Redirecionando para a página de processos...'
+        `Processo "${processName}" inserido com sucesso e sincronizado com GitHub! (${totalUploadedFiles} arquivo(s)) ` +
+        'Redirecionando para a página de processos...'
       );
 
       // Limpar formulário
@@ -612,6 +622,10 @@ export default function InserirProcessoPage() {
       console.error('Erro ao inserir processo:', err);
       if (err?.name === 'AbortError') {
         setError('Timeout ao enviar arquivos. Tente novamente em alguns instantes.');
+      } else if (String(err?.message || '').includes('413')) {
+        setError(
+          'Upload excedeu o limite do servidor (413). O envio agora ocorre em lotes menores, mas se persistir ajuste client_max_body_size/LimitRequestBody no proxy.',
+        );
       } else {
         setError(err?.message || 'Erro ao inserir processo');
       }
