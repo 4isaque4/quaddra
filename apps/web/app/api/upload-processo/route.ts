@@ -144,26 +144,19 @@ export async function POST(request: Request) {
         totalFiles++;
 
         // Adicionar ao GitHub
+        // IMPORTANTE: Se processName já é igual ao folderPath, não duplicar a estrutura
         let githubPath: string;
         if (isRootFiles) {
           // Arquivos na raiz: processName/arquivo.ext
           githubPath = `${processName}/${file.name}`;
-        } else if (isRootFolder) {
-          // Primeira pasta: verificar se processName já é igual ao folderPath para evitar duplicação
-          if (processName === folderPath) {
-            // Se processName já é o nome da pasta, não duplicar: processName/arquivo.ext
-            githubPath = `${processName}/${file.name}`;
-          } else {
-            // Caso contrário: processName/PastaRaiz/arquivo.ext
-            githubPath = `${processName}/${folderPath}/${file.name}`;
-          }
         } else {
-          // Subpastas: verificar se processName está no início do folderPath
-          if (folderPath.startsWith(processName + '/')) {
-            // Se folderPath já começa com processName, não duplicar
+          // Para pastas: se processName já é igual ao folderPath, usar apenas folderPath
+          // Caso contrário, usar processName/folderPath
+          if (processName === folderPath || folderPath.startsWith(processName + '/')) {
+            // Se são iguais ou folderPath já inclui processName, usar apenas folderPath
             githubPath = `${folderPath}/${file.name}`;
           } else {
-            // Caso contrário: processName/PastaRaiz/Subpasta/arquivo.ext
+            // Caso contrário: processName/folderPath/arquivo.ext
             githubPath = `${processName}/${folderPath}/${file.name}`;
           }
         }
