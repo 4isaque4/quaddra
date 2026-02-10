@@ -70,5 +70,10 @@ Options -Indexes
     Deny from all
 </FilesMatch>
 
+# Aumentar limite de upload para requisições grandes (50MB)
+# Isso ajuda a evitar erro 413 Request Entity Too Large
+php_value upload_max_filesize 50M
+php_value post_max_size 50M
+
 # Nota: Se a API estiver rodando como aplicação Node.js separada na Hostnet,
 # não é necessário proxy reverso aqui. A Hostnet gerenciará as rotas automaticamente.

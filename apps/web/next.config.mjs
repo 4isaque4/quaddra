@@ -3,6 +3,14 @@ const nextConfig = {
   reactStrictMode: true,
   experimental: {
     typedRoutes: true,
+    // Aumentar limite de body size para Server Actions (50MB)
+    // Nota: No App Router, não há configuração direta para API Routes
+    // O limite padrão de 1MB pode ser aumentado apenas através de proxy reverso
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+    // Para proxy reverso (se houver nginx/apache na frente)
+    proxyClientMaxBodySize: '50mb',
   },
   // Otimizações para produção
   compress: true,
