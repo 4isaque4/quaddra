@@ -60,11 +60,17 @@ async function getProcessosFromGitHub(): Promise<ProcessoItem[]> {
     console.log(`[PROCESSOS] Buscando processos do GitHub: ${GITHUB_OWNER}/${GITHUB_REPO} (branch: ${GITHUB_BRANCH})`)
     
     // Usar API de conteúdo para listar pastas primeiro (mais confiável)
+    // Adicionar timestamp para evitar cache do GitHub API
     const { data: contents } = await octokit.repos.getContent({
       owner: GITHUB_OWNER,
       repo: GITHUB_REPO,
       path: '',
-      ref: GITHUB_BRANCH
+      ref: GITHUB_BRANCH,
+      // Forçar atualização sem cache
+      headers: {
+        'If-None-Match': '',
+        'Cache-Control': 'no-cache'
+      }
     })
 
     if (!Array.isArray(contents)) {
@@ -85,7 +91,12 @@ async function getProcessosFromGitHub(): Promise<ProcessoItem[]> {
             owner: GITHUB_OWNER,
             repo: GITHUB_REPO,
             path: item.name,
-            ref: GITHUB_BRANCH
+            ref: GITHUB_BRANCH,
+            // Forçar atualização sem cache
+            headers: {
+              'If-None-Match': '',
+              'Cache-Control': 'no-cache'
+            }
           })
 
           if (!Array.isArray(folderContents)) continue
@@ -96,7 +107,12 @@ async function getProcessosFromGitHub(): Promise<ProcessoItem[]> {
               owner: GITHUB_OWNER,
               repo: GITHUB_REPO,
               path,
-              ref: GITHUB_BRANCH
+              ref: GITHUB_BRANCH,
+              // Forçar atualização sem cache
+              headers: {
+                'If-None-Match': '',
+                'Cache-Control': 'no-cache'
+              }
             })
 
             if (!Array.isArray(folderItems)) return
@@ -148,8 +164,21 @@ async function getProcessosFromGitHub(): Promise<ProcessoItem[]> {
       }
     }
 
-    const processosOrdenados = processos.sort((a, b) => a.nome.localeCompare(b.nome))
-    console.log(`[PROCESSOS] Total de processos encontrados: ${processosOrdenados.length}`)
+    // Remover duplicatas baseado no slug (caso haja arquivos duplicados)
+    const processosUnicos = processos.reduce((acc: ProcessoItem[], processo) => {
+      // Verificar se já existe um processo com o mesmo slug
+      const existe = acc.find(p => p.slug === processo.slug);
+      if (!existe) {
+        acc.push(processo);
+      } else {
+        // Se já existe, manter apenas o primeiro (ou o mais recente)
+        console.log(`[PROCESSOS] ⚠️ Processo duplicado encontrado (slug: ${processo.slug}), mantendo apenas um`);
+      }
+      return acc;
+    }, []);
+
+    const processosOrdenados = processosUnicos.sort((a, b) => a.nome.localeCompare(b.nome))
+    console.log(`[PROCESSOS] Total de processos encontrados: ${processosOrdenados.length} (${processos.length} antes de remover duplicatas)`)
     return processosOrdenados
   } catch (error: any) {
     console.error('[PROCESSOS] Erro ao buscar processos do GitHub:', error)

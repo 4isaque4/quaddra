@@ -35,6 +35,11 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
   }, [theme]);
   
   const [processos, setProcessos] = useState<ProcessoItem[]>(processosIniciais);
+  
+  // Atualizar processos quando processosIniciais mudar (após reload)
+  useEffect(() => {
+    setProcessos(processosIniciais);
+  }, [processosIniciais]);
   const [filtro, setFiltro] = useState('');
   const [deletando, setDeletando] = useState<string | null>(null);
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
@@ -135,10 +140,12 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
       
       mostrarNotificacao('sucesso', successMsg);
       
-      // Recarregar a página após 1.5 segundos para garantir que os dados estejam atualizados
+      // Aguardar mais tempo para garantir que o GitHub propague as mudanças
+      // e recarregar com cache-busting para forçar atualização
       setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+        // Adicionar timestamp para evitar cache
+        window.location.href = window.location.pathname + '?t=' + Date.now();
+      }, 3000);
     } catch (error: any) {
       console.error('Erro ao deletar:', error);
       mostrarNotificacao('erro', error.message || 'Erro ao deletar processo');
