@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Octokit } from '@octokit/rest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, relative } from 'path';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
