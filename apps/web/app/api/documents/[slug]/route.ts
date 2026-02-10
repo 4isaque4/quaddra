@@ -95,31 +95,46 @@ export async function GET(
       processFolderName = processFolder;
     }
 
-    // Buscar em docs/ e pop-it/
-    const docsDirs = [
-      join(bpmnDir, processFolderName, 'docs'),
-      join(bpmnDir, processFolderName, 'pop-it')
-    ];
+    // Buscar em todas as pastas dentro do processo
+    const processDir = join(bpmnDir, processFolderName);
+    let allFiles: Array<{name: string, fullPath: string, relativePath: string, folder: string}> = [];
 
-    console.log(`[Documents API GET] Buscando em:`, docsDirs);
-
-    let allFiles: Array<{name: string, fullPath: string, relativePath: string}> = [];
-
-    for (const docsDir of docsDirs) {
-      if (existsSync(docsDir)) {
-        const files = findFilesRecursive(docsDir, docsDir);
-        allFiles.push(...files);
-        console.log(`[Documents API GET] Encontrados ${files.length} arquivos em ${docsDir}`);
+    if (existsSync(processDir)) {
+      // Buscar todas as subpastas (exceto arquivos .bpmn na raiz)
+      const items = readdirSync(processDir);
+      
+      for (const item of items) {
+        if (item.startsWith('.')) continue;
+        
+        const itemPath = join(processDir, item);
+        const stat = statSync(itemPath);
+        
+        // Se for uma pasta (não arquivo .bpmn), buscar documentos dentro dela
+        if (stat.isDirectory() && !item.endsWith('.bpmn')) {
+          const files = findFilesRecursive(itemPath, itemPath);
+          files.forEach(file => {
+            // Extrair nome da pasta do caminho relativo
+            const folderName = item;
+            allFiles.push({
+              ...file,
+              folder: folderName
+            });
+          });
+          console.log(`[Documents API GET] Encontrados ${files.length} arquivos em ${item}/`);
+        }
       }
     }
 
     const documents = allFiles.map(file => {
       const stats = statSync(file.fullPath);
+      // Construir caminho relativo incluindo a pasta
+      const relativePath = file.folder ? `${file.folder}/${file.relativePath}` : file.relativePath;
       return {
-        name: file.relativePath, // Nome com caminho relativo (ex: "geral/arquivo.pdf")
+        name: relativePath, // Nome com caminho relativo (ex: "docs/arquivo.pdf" ou "pop-it/arquivo.pdf")
         size: stats.size,
         modified: stats.mtime.toISOString(),
-        path: `/api/documents/${slug}/download/${encodeURIComponent(file.relativePath)}`
+        path: `/api/documents/${slug}/download/${encodeURIComponent(relativePath)}`,
+        folder: file.folder || 'docs'
       };
     });
 
@@ -142,6 +157,7 @@ export async function POST(
     
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const folderName = (formData.get('folder') as string) || 'docs'; // Pasta selecionada pelo usuário
 
     if (!file) {
       return NextResponse.json({ error: 'Nenhum arquivo enviado' }, { status: 400 });
@@ -185,26 +201,27 @@ export async function POST(
       return false;
     });
 
-    // Se não encontrou pasta, pode ser um arquivo na raiz - criar pasta com o nome do processo
+    // Determinar pasta do processo e diretório de documentos
     let docsDir: string;
     let githubPathPrefix: string;
     let processFolderName: string;
     
     if (!processFolder) {
       console.log(`[Documents API POST] Arquivo na raiz detectado: ${decodedSlug}`);
-      // Criar pasta com o nome do processo diretamente na raiz, subpasta pop-it
+      // Criar pasta com o nome do processo diretamente na raiz
       processFolderName = decodedSlug;
-      docsDir = join(bpmnDir, processFolderName, 'pop-it');
-      githubPathPrefix = `apps/api/storage/bpmn/${processFolderName}/pop-it`;
+      docsDir = join(bpmnDir, processFolderName, folderName);
+      githubPathPrefix = `${processFolderName}/${folderName}`;
     } else {
       processFolderName = processFolder;
-      docsDir = join(bpmnDir, processFolder, 'docs');
-      githubPathPrefix = `apps/api/storage/bpmn/${processFolder}/docs`;
+      docsDir = join(bpmnDir, processFolder, folderName);
+      githubPathPrefix = `${processFolder}/${folderName}`;
     }
 
-    // Criar pasta docs se não existir
+    // Criar pasta selecionada se não existir
     if (!existsSync(docsDir)) {
       mkdirSync(docsDir, { recursive: true });
+      console.log(`[Documents API POST] Pasta criada: ${docsDir}`);
     }
 
     // Salvar arquivo localmente
@@ -222,6 +239,7 @@ export async function POST(
 
       if (token) {
         const octokit = new Octokit({ auth: token });
+        // Usar o caminho completo no GitHub (sem apps/api/storage/bpmn)
         const githubPath = `${githubPathPrefix}/${file.name}`;
         const content = buffer.toString('base64');
 
