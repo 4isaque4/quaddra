@@ -5,7 +5,7 @@ import { Octokit } from '@octokit/rest'
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || ''
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4'
-const GITHUB_REPO = 'vale-shope-processos' // Repositório específico para Vale Shop
+const GITHUB_REPO = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos' // Repositório específico para Vale Shop
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main'
 
 const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null

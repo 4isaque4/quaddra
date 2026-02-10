@@ -218,7 +218,7 @@ export async function POST(
     try {
       const token = process.env.GITHUB_TOKEN;
       const owner = process.env.GITHUB_OWNER || '4isaque4';
-      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || 'quaddra';
+      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
 
       if (token) {
         const octokit = new Octokit({ auth: token });
@@ -359,7 +359,7 @@ export async function DELETE(
     try {
       const token = process.env.GITHUB_TOKEN;
       const owner = process.env.GITHUB_OWNER || '4isaque4';
-      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || 'quaddra';
+      const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPO_PROCESSOS || process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
 
       if (token) {
         const octokit = new Octokit({ auth: token });

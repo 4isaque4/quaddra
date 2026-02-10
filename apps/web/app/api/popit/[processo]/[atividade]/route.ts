@@ -3,7 +3,7 @@ import { Octokit } from '@octokit/rest';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
-const GITHUB_REPO = process.env.GITHUB_REPO_PROCESSOS || 'quaddra-processos';
+const GITHUB_REPO = process.env.GITHUB_REPO_PROCESSOS || process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 
 const octokit = new Octokit({

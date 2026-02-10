@@ -8,7 +8,8 @@ import { convertBpmToBpmn, validateBpmnXml } from '@/../../apps/api/lib/bpm-conv
 // Configuração do GitHub
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
-const GITHUB_REPO = process.env.GITHUB_REPO_PROCESSOS || 'quaddra-processos';
+const GITHUB_REPO_QUADDRA = process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
+const GITHUB_REPO_VALESHOP = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 
 const octokit = new Octokit({
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const clientType = formData.get('clientType') as string | null; // 'valeshop' ou 'quaddra'
 
     // Determinar repositório baseado no cliente
-    const REPO_NAME = clientType === 'valeshop' ? 'vale-shope-processos' : (GITHUB_REPO || 'quaddra-processos');
+    const REPO_NAME = clientType === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA;
     
     console.log('[UPLOAD] Cliente:', clientType || 'quaddra', '- Repositório:', REPO_NAME);
 
@@ -167,22 +168,29 @@ export async function POST(request: Request) {
 
     // 4. Fazer commit e push no GitHub
     console.log('[UPLOAD] Enviando para GitHub');
+    console.log('[UPLOAD] Token configurado:', GITHUB_TOKEN ? 'SIM' : 'NÃO');
+    console.log('[UPLOAD] Repositório:', REPO_NAME);
+    console.log('[UPLOAD] Owner:', GITHUB_OWNER);
+    console.log('[UPLOAD] Branch:', GITHUB_BRANCH);
+    console.log('[UPLOAD] Arquivos para enviar:', githubFiles.length);
 
     try {
       // Verificar se o token está configurado
       if (!GITHUB_TOKEN) {
-        console.warn('[UPLOAD] GitHub token não configurado');
+        console.warn('[UPLOAD] ⚠️ GitHub token não configurado');
         return NextResponse.json({
-          success: true,
-          message: 'Processo salvo localmente (GitHub não configurado)',
+          success: false,
+          message: 'Processo salvo localmente, mas GitHub token não está configurado. Configure GITHUB_TOKEN no .env.local',
           processName,
           totalArquivos: totalFiles,
           githubSynced: false,
+          githubError: 'Token não configurado',
           folderStructure,
         });
       }
 
       // Obter SHA da branch principal
+      console.log('[UPLOAD] Obtendo referência da branch...');
       const { data: ref } = await octokit.git.getRef({
         owner: GITHUB_OWNER,
         repo: REPO_NAME,
@@ -190,7 +198,7 @@ export async function POST(request: Request) {
       });
 
       const currentCommitSha = ref.object.sha;
-      console.log('[UPLOAD] Referência obtida');
+      console.log('[UPLOAD] ✅ Referência obtida:', currentCommitSha.substring(0, 7));
 
       // Obter árvore do commit atual
       const { data: currentCommit } = await octokit.git.getCommit({
@@ -204,45 +212,54 @@ export async function POST(request: Request) {
       // Criar blobs para cada arquivo
       console.log('[UPLOAD] Criando blobs:', githubFiles.length, 'arquivos');
       const blobs = await Promise.all(
-        githubFiles.map(async (file) => {
-          const { data: blob } = await octokit.git.createBlob({
-            owner: GITHUB_OWNER,
-            repo: REPO_NAME,
-            content: file.content,
-            encoding: 'base64',
-          });
-
-          return {
-            path: file.path,
-            mode: '100644' as const,
-            type: 'blob' as const,
-            sha: blob.sha,
-          };
+        githubFiles.map(async (file, index) => {
+          try {
+            console.log(`[UPLOAD] Criando blob ${index + 1}/${githubFiles.length}: ${file.path}`);
+            const { data: blob } = await octokit.git.createBlob({
+              owner: GITHUB_OWNER,
+              repo: REPO_NAME,
+              content: file.content,
+              encoding: 'base64',
+            });
+            console.log(`[UPLOAD] ✅ Blob criado: ${file.path} (${blob.sha.substring(0, 7)})`);
+            return {
+              path: file.path,
+              mode: '100644' as const,
+              type: 'blob' as const,
+              sha: blob.sha,
+            };
+          } catch (blobError: any) {
+            console.error(`[UPLOAD] ❌ Erro ao criar blob ${file.path}:`, blobError.message);
+            throw new Error(`Erro ao criar blob para ${file.path}: ${blobError.message}`);
+          }
         })
       );
-      console.log('[UPLOAD] Blobs criados');
+      console.log('[UPLOAD] ✅ Todos os blobs criados:', blobs.length);
 
       // Criar nova árvore
-      console.log('[UPLOAD] Criando árvore');
+      console.log('[UPLOAD] Criando árvore com', blobs.length, 'arquivos...');
       const { data: newTree } = await octokit.git.createTree({
         owner: GITHUB_OWNER,
         repo: REPO_NAME,
         base_tree: currentTreeSha,
         tree: blobs,
       });
+      console.log('[UPLOAD] ✅ Árvore criada:', newTree.sha.substring(0, 7));
 
       // Criar commit
-      console.log('[UPLOAD] Criando commit');
+      console.log('[UPLOAD] Criando commit...');
+      const commitMessage = `feat: adicionar processo ${processName}\n\n- ${totalFiles} arquivo(s) adicionado(s)`;
       const { data: newCommit } = await octokit.git.createCommit({
         owner: GITHUB_OWNER,
         repo: REPO_NAME,
-        message: `feat: adicionar processo ${processName}\n\n- ${totalFiles} arquivo(s) adicionado(s)`,
+        message: commitMessage,
         tree: newTree.sha,
         parents: [currentCommitSha],
       });
+      console.log('[UPLOAD] ✅ Commit criado:', newCommit.sha.substring(0, 7));
 
       // Atualizar referência da branch
-      console.log('[UPLOAD] Atualizando branch');
+      console.log('[UPLOAD] Atualizando branch', GITHUB_BRANCH, '...');
       await octokit.git.updateRef({
         owner: GITHUB_OWNER,
         repo: REPO_NAME,
@@ -250,19 +267,23 @@ export async function POST(request: Request) {
         sha: newCommit.sha,
       });
 
-      console.log('[UPLOAD] Push concluído');
+      console.log('[UPLOAD] ✅ Push concluído com sucesso!');
     } catch (gitError: any) {
-      console.error('[UPLOAD] Erro no GitHub:', gitError.message);
+      console.error('[UPLOAD] ❌ Erro no GitHub:', gitError.message);
+      console.error('[UPLOAD] Erro completo:', JSON.stringify(gitError, null, 2));
+      console.error('[UPLOAD] Status:', gitError.status);
+      console.error('[UPLOAD] Response:', gitError.response?.data);
 
       // Salvar localmente mesmo se o GitHub falhar
       console.log('[UPLOAD] Arquivos salvos localmente');
       return NextResponse.json({
         success: true,
-        message: 'Processo salvo localmente (erro ao sincronizar com GitHub)',
+        message: `Processo salvo localmente, mas falhou ao enviar para GitHub: ${gitError.message}`,
         processName,
         totalArquivos: totalFiles,
         githubSynced: false,
         githubError: gitError.message,
+        githubErrorDetails: gitError.response?.data || gitError,
         folderStructure,
       });
     }

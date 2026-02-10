@@ -513,8 +513,23 @@ export default function InserirProcessoPage() {
         throw new Error(result.error || 'Erro ao fazer upload');
       }
 
+      // Verificar se foi sincronizado com GitHub
+      if (!result.githubSynced) {
+        const errorMsg = result.githubError 
+          ? `Erro ao enviar para GitHub: ${result.githubError}`
+          : 'Token do GitHub não configurado. Configure GITHUB_TOKEN no arquivo .env.local';
+        
+        setError(
+          `⚠️ Processo "${processName}" foi salvo localmente, mas NÃO foi enviado para o GitHub.\n\n` +
+          `${errorMsg}\n\n` +
+          `Verifique a configuração do token do GitHub.`
+        );
+        setLoading(false);
+        return;
+      }
+
       setMessage(
-        `Processo "${processName}" inserido com sucesso! ` +
+        `✅ Processo "${processName}" inserido com sucesso e sincronizado com GitHub! ` +
         (result.elementsExtracted > 0
           ? `${result.elementsExtracted} elementos extraídos automaticamente.`
           : '') +

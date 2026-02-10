@@ -99,7 +99,9 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
     setDeletando(processoADeletar.slug);
     
     try {
-      const response = await fetch(`/api/delete-processo?slug=${encodeURIComponent(processoADeletar.slug)}`, {
+      // Determinar clientType baseado no basePath
+      const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
+      const response = await fetch(`/api/delete-processo?slug=${encodeURIComponent(processoADeletar.slug)}&clientType=${clientType}`, {
         method: 'DELETE'
       });
 
