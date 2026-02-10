@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Header, Footer } from '@/components';
 import ProcessOrganizationModal from '@/components/ProcessOrganizationModal';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -28,6 +29,10 @@ interface Notificacao {
 
 export default function ProcessosPageClient({ processosIniciais, basePath = '' }: ProcessosPageClientProps) {
   const { theme } = useTheme();
+  const pathname = usePathname();
+  
+  // Detectar basePath automaticamente se não fornecido
+  const detectedBasePath = basePath || (pathname?.startsWith('/vale-shop') ? '/vale-shop' : '');
   
   // Debug: verificar qual tema está sendo usado
   useEffect(() => {
@@ -104,8 +109,8 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
     setDeletando(processoADeletar.slug);
     
     try {
-      // Determinar clientType baseado no basePath
-      const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
+      // Determinar clientType baseado no basePath detectado
+      const clientType = detectedBasePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
       const response = await fetch(`/api/delete-processo?slug=${encodeURIComponent(processoADeletar.slug)}&clientType=${clientType}`, {
         method: 'DELETE'
       });
@@ -241,7 +246,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
                       </h3>
                       <div className="flex gap-2">
                         <Link
-                          href={(basePath ? `/vale-shop/processos/${processo.slug}` : `/processos/${processo.slug}`) as Route}
+                          href={(detectedBasePath ? `/vale-shop/processos/${processo.slug}` : `/processos/${processo.slug}`) as Route}
                           className="flex-1 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
                           style={{
                             backgroundColor: theme.colors.primary,
@@ -346,7 +351,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
         isOpen={isOrganizationModalOpen}
         onClose={() => setIsOrganizationModalOpen(false)}
         processos={processos}
-        clientType={basePath.includes('vale-shop') ? 'valeshop' : 'quaddra'}
+        clientType={detectedBasePath.includes('vale-shop') ? 'valeshop' : 'quaddra'}
         onUpdate={() => {
           // Recarregar processos
           window.location.reload();
