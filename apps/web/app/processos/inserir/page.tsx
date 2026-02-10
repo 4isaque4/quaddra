@@ -403,10 +403,27 @@ export default function InserirProcessoPage() {
       
       mainFolders.forEach(validateFolder);
 
-      // Determinar nome do processo (primeira pasta principal ou nome padrão)
-      const processName = mainFolders.length > 0 && mainFolders[0].name.trim()
-        ? mainFolders[0].name.trim()
-        : 'Processo-' + Date.now();
+      // Determinar nome do processo
+      let processName = '';
+      
+      if (mainFolders.length > 0 && mainFolders[0].name.trim()) {
+        // Se há pasta principal, usar o nome dela
+        processName = mainFolders[0].name.trim();
+      } else if (rootFiles.length > 0) {
+        // Se há arquivos na raiz, usar o nome do primeiro arquivo .bpmn (sem extensão)
+        const rootBpmn = rootFiles.find(f => f.name.endsWith('.bpmn'));
+        if (rootBpmn) {
+          processName = rootBpmn.name.replace(/\.bpmn$/i, '');
+        } else {
+          // Se não há .bpmn, usar o nome do primeiro arquivo (sem extensão)
+          const firstFile = rootFiles[0];
+          const ext = firstFile.name.substring(firstFile.name.lastIndexOf('.'));
+          processName = firstFile.name.replace(ext, '');
+        }
+      } else {
+        // Fallback: usar timestamp apenas se não houver nenhum arquivo
+        processName = 'Processo-' + Date.now();
+      }
 
       // Encontrar arquivo principal (primeiro .bpmn encontrado)
       let mainFile: File | null = null;
