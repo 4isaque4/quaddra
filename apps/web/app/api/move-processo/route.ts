@@ -185,15 +185,23 @@ export async function POST(request: Request) {
       const filesToMove: Array<{ oldPath: string, newPath: string, content: string, sha: string }> = [];
       const filesToDelete: string[] = [];
 
-      // Se o processo está em uma pasta, mover todos os arquivos da pasta
+      // Se o processo está em uma pasta, mover todos os arquivos da pasta (incluindo subpastas)
       if (processFolderName) {
-        // Buscar todos os arquivos dentro da pasta do processo
+        // Buscar todos os arquivos dentro da pasta do processo (incluindo subpastas recursivamente)
         for (const item of currentTree.tree || []) {
+          // Verificar se o arquivo está dentro da pasta do processo (pode estar em subpastas)
           if (item.type === 'blob' && item.path && item.path.startsWith(processFolderName + '/')) {
             const relativePath = item.path.substring(processFolderName.length + 1);
-            const newItemPath = targetFolderPath 
-              ? `${targetFolderPath}/${processFolderName}/${relativePath}`
-              : `${processFolderName}/${relativePath}`;
+            
+            // Determinar novo caminho baseado no destino
+            let newItemPath: string;
+            if (targetFolderPath) {
+              // Mover para pasta específica: targetFolderPath/processFolderName/relativePath
+              newItemPath = `${targetFolderPath}/${processFolderName}/${relativePath}`;
+            } else {
+              // Mover para raiz: processFolderName/relativePath
+              newItemPath = `${processFolderName}/${relativePath}`;
+            }
 
             // Buscar conteúdo do arquivo
             try {
@@ -212,13 +220,20 @@ export async function POST(request: Request) {
                   content,
                   sha: item.sha!
                 });
+                // Adicionar à lista de arquivos para deletar
                 filesToDelete.push(item.path);
+                console.log('[MOVE] Arquivo marcado para mover:', item.path, '->', newItemPath);
               }
             } catch (error: any) {
               console.warn('[MOVE] Erro ao buscar arquivo do GitHub:', item.path, error.message);
             }
           }
         }
+        
+        // Também marcar todas as subpastas (trees) para remoção se necessário
+        // Nota: GitHub remove trees automaticamente quando não há mais arquivos nelas
+        console.log('[MOVE] Total de arquivos a mover:', filesToMove.length);
+        console.log('[MOVE] Total de arquivos a deletar:', filesToDelete.length);
       } else {
         // Arquivo na raiz - mover apenas o arquivo
         const item = currentTree.tree.find(i => i.path === processPathInGitHub);
@@ -278,9 +293,30 @@ export async function POST(request: Request) {
         })
       );
 
-      // Filtrar arquivos antigos e adicionar novos
+      // Filtrar arquivos antigos (garantir que todos os arquivos da pasta antiga sejam removidos)
       const updatedTree = currentTree.tree
-        .filter(item => !filesToDelete.includes(item.path || ''))
+        .filter(item => {
+          // Remover arquivos que estão na lista de deletar
+          if (item.type === 'blob' && item.path && filesToDelete.includes(item.path)) {
+            console.log('[MOVE] Removendo arquivo antigo da árvore:', item.path);
+            return false;
+          }
+          // Remover trees (pastas) que estão vazias após mover arquivos
+          if (item.type === 'tree' && processFolderName && item.path && item.path.startsWith(processFolderName + '/')) {
+            // Verificar se ainda há arquivos nesta pasta
+            const hasFilesInFolder = currentTree.tree.some(
+              otherItem => otherItem.type === 'blob' && 
+                          otherItem.path && 
+                          otherItem.path.startsWith(item.path + '/') &&
+                          !filesToDelete.includes(otherItem.path)
+            );
+            if (!hasFilesInFolder) {
+              console.log('[MOVE] Removendo pasta vazia da árvore:', item.path);
+              return false;
+            }
+          }
+          return true;
+        })
         .map(item => ({
           path: item.path!,
           mode: item.mode as '100644' | '100755' | '040000' | '160000' | '120000',
@@ -290,6 +326,8 @@ export async function POST(request: Request) {
 
       // Adicionar novos arquivos
       updatedTree.push(...newBlobs);
+      
+      console.log('[MOVE] Árvore atualizada:', updatedTree.length, 'itens (removidos', filesToDelete.length, 'arquivos antigos)');
 
       // Criar nova árvore
       const { data: newTreeData } = await octokit.git.createTree({

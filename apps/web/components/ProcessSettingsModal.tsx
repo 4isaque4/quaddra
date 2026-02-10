@@ -33,6 +33,8 @@ export default function ProcessSettingsModal({
   const [newFileName, setNewFileName] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>('docs');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
@@ -55,8 +57,9 @@ export default function ProcessSettingsModal({
       setNewFileName(originalFileName);
       setShowFileRename(false);
       
-      // Carregar documentos
+      // Carregar documentos e pastas disponíveis
       loadDocuments();
+      loadAvailableFolders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, processSlug, originalFileName]);
@@ -73,6 +76,26 @@ export default function ProcessSettingsModal({
     }
   };
 
+  const loadAvailableFolders = async () => {
+    try {
+      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}/folders`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableFolders(data.folders || ['docs']);
+        // Se docs não está na lista, adicionar como padrão
+        if (!data.folders || data.folders.length === 0) {
+          setAvailableFolders(['docs']);
+        }
+      } else {
+        // Se a API não existir ainda, usar padrão
+        setAvailableFolders(['docs']);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar pastas:', error);
+      setAvailableFolders(['docs']);
+    }
+  };
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -81,6 +104,7 @@ export default function ProcessSettingsModal({
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('folder', selectedFolder);
 
       const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
         method: 'POST',
@@ -341,34 +365,65 @@ export default function ProcessSettingsModal({
                 )}
               </div>
 
-              <hr className="border-gray-200" />
-
-              {/* Informações do Processo */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Informações do Processo</h3>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex justify-between">
-                    <span className="font-medium">Slug:</span>
-                    <span className="text-gray-800 font-mono">{processSlug}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Nome Original:</span>
-                    <span className="text-gray-800">{originalName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Arquivo:</span>
-                    <span className="text-gray-800 font-mono">{originalFileName}</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Documentos Associados */}
               <div>
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Documentos Associados</h3>
                 <p className="text-xs text-gray-500 mb-3">
-                  Anexe POPs, ITs, planilhas e outros documentos relacionados a este processo. 
-                  Os arquivos são salvos na pasta <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">docs/</code> do processo no servidor.
+                  Anexe POPs, ITs, planilhas e outros documentos relacionados a este processo.
                 </p>
+                
+                {/* Seleção de Pasta */}
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Pasta de Destino
+                  </label>
+                  <select
+                    value={selectedFolder}
+                    onChange={(e) => setSelectedFolder(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none mb-3"
+                    style={{ borderColor: '#d1d5db' }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = theme.colors.primary;
+                      e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#d1d5db';
+                      e.target.style.boxShadow = 'none';
+                    }}
+                  >
+                    {availableFolders.map((folder) => (
+                      <option key={folder} value={folder}>
+                        {folder === 'docs' ? 'docs/ (padrão)' : folder}
+                      </option>
+                    ))}
+                    <option value="__new__">+ Criar nova pasta</option>
+                  </select>
+                  {selectedFolder === '__new__' && (
+                    <input
+                      type="text"
+                      placeholder="Nome da nova pasta (ex: pop-it, contratos)"
+                      value={selectedFolder === '__new__' ? '' : selectedFolder}
+                      onChange={(e) => {
+                        const newFolder = e.target.value.trim().replace(/[^a-zA-Z0-9-_]/g, '-');
+                        if (newFolder) {
+                          setSelectedFolder(newFolder);
+                        }
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none mt-2"
+                      onFocus={(e) => {
+                        e.target.style.borderColor = theme.colors.primary;
+                        e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.boxShadow = 'none';
+                        if (!e.target.value.trim()) {
+                          setSelectedFolder('docs');
+                        }
+                      }}
+                    />
+                  )}
+                </div>
                 
                 {/* Botão de Upload */}
                 <div className="mb-4">
@@ -383,19 +438,19 @@ export default function ProcessSettingsModal({
                     className="w-full px-4 py-2 text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: theme.colors.primary }}
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
+                    disabled={isUploading || selectedFolder === '__new__'}
                     onMouseEnter={(e) => {
-                      if (!isUploading) {
+                      if (!isUploading && selectedFolder !== '__new__') {
                         e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isUploading) {
+                      if (!isUploading && selectedFolder !== '__new__') {
                         e.currentTarget.style.backgroundColor = theme.colors.primary;
                       }
                     }}
                   >
-                    {isUploading ? 'Enviando...' : 'Fazer Upload de Documento'}
+                    {isUploading ? 'Enviando...' : `Fazer Upload para ${selectedFolder === '__new__' ? '...' : selectedFolder}/`}
                   </button>
                   <p className="text-xs text-gray-500 mt-2">
                     Formatos aceitos: PDF, DOCX, DOC, XLSX, XLS, TXT, PNG, JPG

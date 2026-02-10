@@ -149,11 +149,23 @@ export async function POST(request: Request) {
           // Arquivos na raiz: processName/arquivo.ext
           githubPath = `${processName}/${file.name}`;
         } else if (isRootFolder) {
-          // Primeira pasta: processName/PastaRaiz/arquivo.ext
-          githubPath = `${processName}/${folderPath}/${file.name}`;
+          // Primeira pasta: verificar se processName já é igual ao folderPath para evitar duplicação
+          if (processName === folderPath) {
+            // Se processName já é o nome da pasta, não duplicar: processName/arquivo.ext
+            githubPath = `${processName}/${file.name}`;
+          } else {
+            // Caso contrário: processName/PastaRaiz/arquivo.ext
+            githubPath = `${processName}/${folderPath}/${file.name}`;
+          }
         } else {
-          // Subpastas: processName/PastaRaiz/Subpasta/arquivo.ext
-          githubPath = `${processName}/${folderPath}/${file.name}`;
+          // Subpastas: verificar se processName está no início do folderPath
+          if (folderPath.startsWith(processName + '/')) {
+            // Se folderPath já começa com processName, não duplicar
+            githubPath = `${folderPath}/${file.name}`;
+          } else {
+            // Caso contrário: processName/PastaRaiz/Subpasta/arquivo.ext
+            githubPath = `${processName}/${folderPath}/${file.name}`;
+          }
         }
 
         githubFiles.push({
