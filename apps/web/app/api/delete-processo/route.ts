@@ -398,14 +398,17 @@ export async function DELETE(request: Request) {
           sha: newCommit.sha
         });
 
-        console.log('[DELETE] Arquivo específico deletado do GitHub com sucesso');
+        console.log('[DELETE] ✅ Arquivo específico deletado do GitHub com sucesso');
+        console.log('[DELETE] Commit SHA:', newCommit.sha);
+        console.log('[DELETE] Aguarde alguns segundos para o GitHub propagar as mudanças...');
 
         return NextResponse.json({ 
           success: true, 
           message: 'Processo deletado com sucesso',
           deletedLocal,
           deletedGitHub: true,
-          file: githubFileToDelete
+          file: githubFileToDelete,
+          commitSha: newCommit.sha
         });
       }
 
