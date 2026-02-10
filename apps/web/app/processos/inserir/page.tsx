@@ -2,16 +2,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { Header, Footer } from '@/components';
 import Link from 'next/link';
+import { Folder, FolderPlus, FileText, GripVertical, X, Trash2, Plus } from 'lucide-react';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePathname } from 'next/navigation';
 
-// Tipo para pasta personalizada
+// Tipo para pasta personalizada com suporte a hierarquia
 type FolderConfig = {
   id: string;
   name: string;
   files: File[];
+  subfolders: FolderConfig[];
+  parentId?: string;
 };
 
 export default function InserirProcessoPage() {
@@ -30,44 +33,65 @@ export default function InserirProcessoPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
 
-  // Dados do formulário
-  const [folders, setFolders] = useState<FolderConfig[]>([
-    { id: 'folder-1', name: '', files: [] } // Pasta raiz do processo
-  ]);
+  // Dados do formulário - estrutura flexível: arquivos na raiz + múltiplas pastas principais
+  const [rootFiles, setRootFiles] = useState<File[]>([]); // Arquivos diretamente na raiz (sem pasta)
+  const [mainFolders, setMainFolders] = useState<FolderConfig[]>([]); // Múltiplas pastas principais
+  const [draggedFile, setDraggedFile] = useState<{ file: File, sourceFolderId: string | null } | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState<string | null>(null); // ID da pasta pai ou null para raiz
+  const [newFolderName, setNewFolderName] = useState('');
 
-  // Preview do primeiro arquivo da primeira pasta (arquivo principal)
-  const handleFirstFolderFileChange = async (files: File[]) => {
-    if (files.length === 0) return;
+  // Função auxiliar para encontrar pasta por ID recursivamente
+  const findFolderById = (folders: FolderConfig[], id: string): FolderConfig | null => {
+    for (const folder of folders) {
+      if (folder.id === id) return folder;
+      const found = findFolderById(folder.subfolders, id);
+      if (found) return found;
+    }
+    return null;
+  };
 
-    const firstFile = files[0];
+  // Função auxiliar para atualizar pasta recursivamente
+  const updateFolderInTree = (folders: FolderConfig[], id: string, updater: (f: FolderConfig) => FolderConfig): FolderConfig[] => {
+    return folders.map(folder => {
+      if (folder.id === id) {
+        return updater(folder);
+      }
+      return {
+        ...folder,
+        subfolders: updateFolderInTree(folder.subfolders, id, updater)
+      };
+    });
+  };
+
+  // Função auxiliar para remover pasta recursivamente
+  const removeFolderFromTree = (folders: FolderConfig[], id: string): FolderConfig[] => {
+    return folders
+      .filter(folder => folder.id !== id)
+      .map(folder => ({
+        ...folder,
+        subfolders: removeFolderFromTree(folder.subfolders, id)
+      }));
+  };
+
+  // Preview do primeiro arquivo BPMN encontrado
+  const handleFilePreview = async (file: File) => {
+    if (!file.name.endsWith('.bpmn')) return;
+
     setError('');
     setMessage('');
 
-    console.log('[PREVIEW] Arquivo selecionado:', firstFile.name);
-
-    // Se for .bpmn, mostrar preview direto
-    if (firstFile.name.endsWith('.bpmn')) {
-      try {
-        console.log('[PREVIEW] Lendo arquivo BPMN...');
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const xml = e.target?.result as string;
-          console.log('[PREVIEW] XML lido, tamanho:', xml.length, 'caracteres');
-          await renderPreview(xml);
-        };
-        reader.onerror = (err) => {
-          console.error('[PREVIEW] Erro ao ler arquivo:', err);
-          setError('Erro ao ler arquivo BPMN');
-        };
-        reader.readAsText(firstFile);
-      } catch (err) {
-        console.error('[PREVIEW] Erro ao processar arquivo:', err);
-        setError('Erro ao processar arquivo BPMN');
-      }
-    } else if (firstFile.name.endsWith('.bpm')) {
-      setMessage('Arquivo .bpm selecionado. O Bizagi usa formato XPDL internamente. Para visualização do diagrama, exporte o arquivo como BPMN 2.0 no Bizagi Modeler e faça upload do arquivo .bpmn gerado.');
-      setShowPreview(false);
-      setBpmnXml(null);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const xml = e.target?.result as string;
+        await renderPreview(xml);
+      };
+      reader.onerror = () => {
+        setError('Erro ao ler arquivo BPMN');
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      setError('Erro ao processar arquivo BPMN');
     }
   };
 
@@ -205,57 +229,145 @@ export default function InserirProcessoPage() {
     };
   }, []);
 
-  // Adicionar pasta
-  const addFolder = () => {
-    setFolders([...folders, {
-      id: `folder-${Date.now()}`,
-      name: '',
-      files: []
-    }]);
+  // Adicionar arquivos na raiz
+  const addRootFiles = (newFiles: File[]) => {
+    const existingNames = rootFiles.map(f => f.name);
+    const filesToAdd = newFiles.filter(f => !existingNames.includes(f.name));
+    setRootFiles([...rootFiles, ...filesToAdd]);
+    
+    // Preview do primeiro arquivo BPMN
+    if (filesToAdd.length > 0) {
+      const bpmnFile = filesToAdd.find(f => f.name.endsWith('.bpmn'));
+      if (bpmnFile) handleFilePreview(bpmnFile);
+    }
+  };
+
+  // Remover arquivo da raiz
+  const removeRootFile = (fileName: string) => {
+    setRootFiles(rootFiles.filter(f => f.name !== fileName));
+  };
+
+  // Criar nova pasta principal ou subpasta
+  const createFolder = (parentId: string | null) => {
+    if (!newFolderName.trim()) {
+      setError('Digite um nome para a pasta');
+      return;
+    }
+
+    const newFolder: FolderConfig = {
+      id: `folder-${Date.now()}-${Math.random()}`,
+      name: newFolderName.trim(),
+      files: [],
+      subfolders: [],
+      parentId: parentId || undefined
+    };
+
+    if (parentId === null) {
+      // Criar pasta principal
+      setMainFolders([...mainFolders, newFolder]);
+    } else {
+      // Criar subpasta
+      setMainFolders(updateFolderInTree(mainFolders, parentId, (folder) => ({
+        ...folder,
+        subfolders: [...folder.subfolders, newFolder]
+      })));
+    }
+
+    setNewFolderName('');
+    setCreatingFolder(null);
   };
 
   // Remover pasta
   const removeFolder = (id: string) => {
-    setFolders(folders.filter(f => f.id !== id));
+    setMainFolders(removeFolderFromTree(mainFolders, id));
   };
 
   // Atualizar nome da pasta
   const updateFolderName = (id: string, name: string) => {
-    setFolders(folders.map(f =>
-      f.id === id ? { ...f, name } : f
-    ));
+    setMainFolders(updateFolderInTree(mainFolders, id, (folder) => ({
+      ...folder,
+      name
+    })));
   };
 
-  // Remover arquivo individual
-  const removeFile = (folderId: string, fileName: string) => {
-    setFolders(folders.map(f => {
-      if (f.id === folderId) {
-        return { ...f, files: f.files.filter(file => file.name !== fileName) };
+  // Adicionar arquivos a uma pasta
+  const addFilesToFolder = (folderId: string, newFiles: File[]) => {
+    setMainFolders(updateFolderInTree(mainFolders, folderId, (folder) => {
+      const existingNames = folder.files.map(f => f.name);
+      const filesToAdd = newFiles.filter(f => !existingNames.includes(f.name));
+      
+      // Preview do primeiro arquivo BPMN
+      if (filesToAdd.length > 0) {
+        const bpmnFile = filesToAdd.find(f => f.name.endsWith('.bpmn'));
+        if (bpmnFile) handleFilePreview(bpmnFile);
       }
-      return f;
+      
+      return {
+        ...folder,
+        files: [...folder.files, ...filesToAdd]
+      };
     }));
   };
 
-  // Atualizar arquivos da pasta (adiciona aos existentes)
-  const updateFolderFiles = (id: string, newFiles: File[]) => {
-    const folder = folders.find(f => f.id === id);
-    const isFirstFolder = id === 'folder-1';
-    const wasEmpty = folder ? folder.files.length === 0 : true;
+  // Remover arquivo de uma pasta
+  const removeFileFromFolder = (folderId: string, fileName: string) => {
+    setMainFolders(updateFolderInTree(mainFolders, folderId, (folder) => ({
+      ...folder,
+      files: folder.files.filter(f => f.name !== fileName)
+    })));
+  };
 
-    setFolders(folders.map(f => {
-      if (f.id === id) {
-        // Adicionar novos arquivos aos existentes, evitando duplicatas
-        const existingFileNames = f.files.map(file => file.name);
-        const filesToAdd = newFiles.filter(file => !existingFileNames.includes(file.name));
-        return { ...f, files: [...f.files, ...filesToAdd] };
-      }
-      return f;
-    }));
+  // Drag and Drop handlers
+  const handleDragStart = (e: React.DragEvent, file: File, sourceFolderId: string | null) => {
+    setDraggedFile({ file, sourceFolderId });
+    e.dataTransfer.effectAllowed = 'move';
+  };
 
-    // Se for a primeira pasta e estava vazia, tentar preview do primeiro arquivo
-    if (isFirstFolder && wasEmpty && newFiles.length > 0) {
-      handleFirstFolderFileChange(newFiles);
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (targetFolderId: string | null) => {
+    if (!draggedFile) return;
+
+    const { file, sourceFolderId } = draggedFile;
+
+    // Remover do local de origem
+    if (sourceFolderId === null) {
+      removeRootFile(file.name);
+    } else {
+      removeFileFromFolder(sourceFolderId, file.name);
     }
+
+    // Adicionar ao destino
+    if (targetFolderId === null) {
+      addRootFiles([file]);
+    } else {
+      addFilesToFolder(targetFolderId, [file]);
+    }
+
+    setDraggedFile(null);
+  };
+
+  // Função auxiliar para coletar estrutura de pastas em formato plano para envio
+  const flattenFolderStructure = (folder: FolderConfig, parentPath: string = ''): Array<{ path: string, name: string, files: File[] }> => {
+    const currentPath = parentPath ? `${parentPath}/${folder.name}` : folder.name;
+    const result: Array<{ path: string, name: string, files: File[] }> = [];
+    
+    if (folder.files.length > 0 || folder.subfolders.length > 0) {
+      result.push({
+        path: currentPath,
+        name: folder.name,
+        files: folder.files
+      });
+    }
+    
+    folder.subfolders.forEach(subfolder => {
+      result.push(...flattenFolderStructure(subfolder, currentPath));
+    });
+    
+    return result;
   };
 
   // Submit do formulário
@@ -267,60 +379,108 @@ export default function InserirProcessoPage() {
 
     try {
       // Validações
-      if (folders.length === 0) {
-        throw new Error('Adicione pelo menos uma pasta com arquivos');
+      const totalFiles = rootFiles.length + mainFolders.reduce((sum, folder) => {
+        const countFiles = (f: FolderConfig): number => {
+          return f.files.length + f.subfolders.reduce((acc, sub) => acc + countFiles(sub), 0);
+        };
+        return sum + countFiles(folder);
+      }, 0);
+
+      if (totalFiles === 0) {
+        throw new Error('Adicione pelo menos um arquivo');
       }
 
-      // A primeira pasta deve ter nome e arquivos (é a pasta raiz)
-      if (!folders[0].name.trim()) {
-        throw new Error('A pasta raiz (Pasta 1) deve ter um nome');
-      }
-
-      if (folders[0].files.length === 0) {
-        throw new Error('A Pasta 1 deve conter pelo menos um arquivo');
-      }
-
-      // Validar nomes de pastas
-      for (const folder of folders) {
+      // Validar todas as pastas recursivamente
+      const validateFolder = (folder: FolderConfig): void => {
         if (!folder.name.trim()) {
           throw new Error('Todas as pastas devem ter um nome');
         }
-        if (folder.files.length === 0) {
-          throw new Error(`A pasta "${folder.name}" não tem arquivos`);
+        if (folder.files.length === 0 && folder.subfolders.length === 0) {
+          throw new Error(`A pasta "${folder.name}" não tem arquivos nem subpastas`);
         }
+        folder.subfolders.forEach(validateFolder);
+      };
+      
+      mainFolders.forEach(validateFolder);
+
+      // Determinar nome do processo (primeira pasta principal ou nome padrão)
+      const processName = mainFolders.length > 0 && mainFolders[0].name.trim()
+        ? mainFolders[0].name.trim()
+        : 'Processo-' + Date.now();
+
+      // Encontrar arquivo principal (primeiro .bpmn encontrado)
+      let mainFile: File | null = null;
+      let mainFileName = '';
+
+      // Procurar na raiz primeiro
+      const rootBpmn = rootFiles.find(f => f.name.endsWith('.bpmn'));
+      if (rootBpmn) {
+        mainFile = rootBpmn;
+        mainFileName = rootBpmn.name;
+      } else {
+        // Procurar nas pastas
+        const findFirstBpmn = (folders: FolderConfig[]): File | null => {
+          for (const folder of folders) {
+            const bpmn = folder.files.find(f => f.name.endsWith('.bpmn'));
+            if (bpmn) return bpmn;
+            const found = findFirstBpmn(folder.subfolders);
+            if (found) return found;
+          }
+          return null;
+        };
+        mainFile = findFirstBpmn(mainFolders);
+        if (mainFile) mainFileName = mainFile.name;
       }
 
-      // Extrair arquivo principal (primeiro arquivo da primeira pasta)
-      const mainFile = folders[0].files[0];
+      // Se não encontrou .bpmn, usar o primeiro arquivo disponível
+      if (!mainFile) {
+        mainFile = rootFiles.length > 0 ? rootFiles[0] : (mainFolders[0]?.files[0] || null);
+        if (mainFile) mainFileName = mainFile.name;
+      }
 
-      // Criar FormData - primeira pasta é o nome do processo
-      const processName = folders[0].name;
+      if (!mainFile) {
+        throw new Error('Nenhum arquivo encontrado');
+      }
+
+      // Criar FormData
       const formData = new FormData();
       formData.append('processName', processName);
       formData.append('mainFile', mainFile);
-      formData.append('mainFileName', mainFile.name);
+      formData.append('mainFileName', mainFileName);
       
-      // Adicionar tipo de cliente (valeshop ou quaddra)
+      // Adicionar tipo de cliente
       const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
       formData.append('clientType', clientType);
 
-      // Não enviar bpmnXml completo no FormData para evitar erro 413
-      // O arquivo já está sendo enviado e pode ser lido no servidor
-      // if (bpmnXml) {
-      //   formData.append('bpmnXml', bpmnXml);
-      // }
+      // Coletar estrutura completa
+      const folderStructure: Array<{ path: string, name: string, files: File[] }> = [];
+      
+      // Adicionar arquivos da raiz como uma "pasta" especial
+      if (rootFiles.length > 0) {
+        folderStructure.push({
+          path: '',
+          name: '',
+          files: rootFiles
+        });
+      }
 
-      // Adicionar estrutura de pastas
-      const folderStructure = folders.map(f => ({
-        name: f.name,
+      // Adicionar todas as pastas principais e suas subpastas
+      mainFolders.forEach(folder => {
+        folderStructure.push(...flattenFolderStructure(folder));
+      });
+
+      // Adicionar estrutura de pastas (formato compatível com API)
+      const folderStructureForAPI = folderStructure.map(f => ({
+        name: f.path || 'root', // Caminho completo da pasta ou 'root' para raiz
         fileCount: f.files.length
       }));
-      formData.append('folderStructure', JSON.stringify(folderStructure));
+      formData.append('folderStructure', JSON.stringify(folderStructureForAPI));
 
-      // Adicionar arquivos de cada pasta
-      folders.forEach(folder => {
+      // Adicionar arquivos de cada pasta usando o caminho completo
+      folderStructure.forEach(folder => {
         folder.files.forEach(file => {
-          formData.append(`folder_${folder.name}`, file);
+          const pathKey = folder.path || 'root';
+          formData.append(`folder_${pathKey}`, file);
         });
       });
 
@@ -344,9 +504,12 @@ export default function InserirProcessoPage() {
       );
 
       // Limpar formulário
-      setFolders([{ id: 'folder-1', name: '', files: [] }]);
+      setRootFiles([]);
+      setMainFolders([]);
       setShowPreview(false);
       setBpmnXml(null);
+      setNewFolderName('');
+      setCreatingFolder(null);
 
       // Resetar inputs
       const fileInputs = document.querySelectorAll('input[type="file"]');
@@ -496,160 +659,53 @@ export default function InserirProcessoPage() {
                 </div>
               )}
 
-              {/* Estrutura de Pastas */}
+              {/* Estrutura de Organização */}
               <div className="mb-6">
                 <label className="block text-sm font-semibold mb-2" style={{ color: theme.colors.text }}>
                   Organização de Arquivos
                 </label>
                 <p className="text-sm mb-4" style={{ color: '#606770' }}>
-                  A Pasta 1 será a pasta raiz no GitHub (ex: &quot;Comercial&quot;). Adicione qualquer tipo de arquivo (.bpm, .bpmn, .pdf, .doc, .xlsx, etc.) direto nela ou crie subpastas adicionais.
+                  Organize seus arquivos como preferir: coloque diretamente na raiz, crie pastas principais ou organize em subpastas. Arraste arquivos entre pastas para reorganizar.
                 </p>
 
-                <div className="space-y-4">
-                  {folders.map((folder, index) => (
-                    <div key={folder.id} className="border rounded-lg p-5" style={{ borderColor: '#d1d5db', backgroundColor: 'white' }}>
-                      <div className="flex gap-2 mb-3 items-center">
-                        <div className="flex-shrink-0 w-6 h-6 text-white rounded-full flex items-center justify-center text-xs font-semibold" style={{ backgroundColor: theme.colors.primary }}>
-                          {index + 1}
-                        </div>
-                        <input
-                          type="text"
-                          value={folder.name}
-                          onChange={(e) => updateFolderName(folder.id, e.target.value)}
-                          placeholder={index === 0 ? "Nome da pasta raiz (ex: Comercial)" : `Nome da pasta ${index + 1}`}
-                          className="flex-1 px-3 py-1.5 text-sm border rounded-lg outline-none transition-all"
-                          style={{ borderColor: '#e5e7eb', backgroundColor: '#fff' }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = theme.colors.primary;
-                            e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = '#e5e7eb';
-                            e.target.style.boxShadow = 'none';
-                          }}
-                        />
-                        {index > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => removeFolder(folder.id)}
-                            className="p-1.5 text-sm rounded-lg transition-all"
-                            style={{ color: '#606770' }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = '#F2F2F2';
-                              e.currentTarget.style.color = theme.colors.text;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                              e.currentTarget.style.color = '#606770';
-                            }}
-                            title="Remover pasta"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
+                {/* Área de Drop para Raiz */}
+                <div
+                  className="mb-4 p-4 border-2 border-dashed rounded-lg transition-colors"
+                  style={{
+                    borderColor: draggedFile ? theme.colors.primary : '#e5e7eb',
+                    backgroundColor: draggedFile ? `${theme.colors.primary}10` : 'transparent'
+                  }}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDrop(null);
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Folder className="w-5 h-5" style={{ color: theme.colors.primary }} />
+                    <span className="font-semibold" style={{ color: theme.colors.primary }}>
+                      Raiz (Arquivos sem pasta)
+                    </span>
+                  </div>
 
-                      <div className="relative">
-                        <input
-                          type="file"
-                          multiple
-                          onChange={(e) => updateFolderFiles(folder.id, Array.from(e.target.files || []))}
-                          className="hidden"
-                          id={`file-${folder.id}`}
-                        />
-                        <label
-                          htmlFor={`file-${folder.id}`}
-                          className="inline-flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-all text-sm"
-                          style={{
-                            borderColor: '#e5e7eb',
-                            backgroundColor: 'white',
-                            color: '#606770'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = theme.colors.primary;
-                            e.currentTarget.style.color = theme.colors.primary;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = '#e5e7eb';
-                            e.currentTarget.style.color = '#606770';
-                          }}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          <span className="font-medium">
-                            {folder.files.length > 0 ? `${folder.files.length} arquivo(s)` : 'Selecionar arquivos'}
-                          </span>
-                        </label>
-
-                        {folder.files.length === 0 && (
-                          <p className="text-xs mt-2 text-center" style={{ color: '#606770' }}>
-                            {index === 0
-                              ? 'Adicione arquivos (.bpm, .bpmn, .pdf, .doc, etc.)'
-                              : 'Adicione qualquer tipo de arquivo'}
-                          </p>
-                        )}
-
-                        {/* Lista de arquivos adicionados */}
-                        {folder.files.length > 0 && (
-                          <div className="mt-3 space-y-2">
-                            {folder.files.map((file, fileIndex) => (
-                              <div
-                                key={fileIndex}
-                                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm"
-                                style={{ backgroundColor: '#F2F2F2', borderColor: '#e5e7eb' }}
-                              >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <svg className="w-4 h-4 flex-shrink-0" style={{ color: '#606770' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  <span className="truncate" style={{ color: theme.colors.text }} title={file.name}>
-                                    {file.name}
-                                  </span>
-                                  <span className="text-xs flex-shrink-0" style={{ color: '#606770' }}>
-                                    ({(file.size / 1024).toFixed(1)} KB)
-                                  </span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => removeFile(folder.id, file.name)}
-                                  className="p-1 rounded transition-all flex-shrink-0"
-                                  style={{ color: '#606770' }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = 'white';
-                                    e.currentTarget.style.color = '#2D3340';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                    e.currentTarget.style.color = '#606770';
-                                  }}
-                                  title="Remover arquivo"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={addFolder}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-medium text-sm"
+                  {/* Input para adicionar arquivos na raiz */}
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => addRootFiles(Array.from(e.target.files || []))}
+                    className="hidden"
+                    id="file-root"
+                  />
+                  <label
+                    htmlFor="file-root"
+                    className="inline-flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-all text-sm mb-3"
                     style={{
-                      backgroundColor: 'transparent',
-                      border: '1px solid #e5e7eb',
+                      borderColor: '#e5e7eb',
+                      backgroundColor: 'white',
                       color: '#606770'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = theme.colors.border;
+                      e.currentTarget.style.borderColor = theme.colors.primary;
                       e.currentTarget.style.color = theme.colors.primary;
                     }}
                     onMouseLeave={(e) => {
@@ -657,26 +713,330 @@ export default function InserirProcessoPage() {
                       e.currentTarget.style.color = '#606770';
                     }}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Adicionar Pasta
+                    <Plus className="w-4 h-4" />
+                    <span className="font-medium">
+                      {rootFiles.length > 0 ? `${rootFiles.length} arquivo(s)` : 'Adicionar arquivos na raiz'}
+                    </span>
+                  </label>
+
+                  {/* Lista de arquivos na raiz */}
+                  {rootFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {rootFiles.map((file, idx) => (
+                        <div
+                          key={idx}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, file, null)}
+                          className="flex items-center gap-2 p-2 bg-white border rounded-lg cursor-move transition-all text-sm"
+                          style={{ borderColor: '#e5e7eb' }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = theme.colors.primary;
+                            e.currentTarget.style.boxShadow = `0 2px 8px ${theme.colors.primary}30`;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = '#e5e7eb';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
+                        >
+                          <GripVertical className="w-4 h-4" style={{ color: theme.colors.primary }} />
+                          <FileText className="w-4 h-4" style={{ color: theme.colors.primary }} />
+                          <span className="flex-1 truncate" style={{ color: theme.colors.text }} title={file.name}>
+                            {file.name}
+                          </span>
+                          <span className="text-xs" style={{ color: '#606770' }}>
+                            ({(file.size / 1024).toFixed(1)} KB)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeRootFile(file.name)}
+                            className="p-1 rounded transition-all"
+                            style={{ color: '#606770' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#F2F2F2';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Renderizar Pastas Principais */}
+                {(() => {
+                  const renderFolder = (folder: FolderConfig, level: number = 0): JSX.Element => {
+                    const indent = level * 24;
+                    
+                    return (
+                      <div key={folder.id} className="mb-4" style={{ marginLeft: `${indent}px` }}>
+                        <div
+                          className="border rounded-lg p-5 transition-colors"
+                          style={{
+                            borderColor: draggedFile ? theme.colors.primary : '#d1d5db',
+                            backgroundColor: draggedFile ? `${theme.colors.primary}10` : 'white'
+                          }}
+                          onDragOver={handleDragOver}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            handleDrop(folder.id);
+                          }}
+                        >
+                          {/* Cabeçalho da Pasta */}
+                          <div className="flex gap-2 mb-3 items-center">
+                            <Folder className="w-5 h-5" style={{ color: theme.colors.primary }} />
+                            <input
+                              type="text"
+                              value={folder.name}
+                              onChange={(e) => updateFolderName(folder.id, e.target.value)}
+                              placeholder="Nome da pasta"
+                              className="flex-1 px-3 py-1.5 text-sm border rounded-lg outline-none transition-all"
+                              style={{ borderColor: '#e5e7eb', backgroundColor: '#fff' }}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = theme.colors.primary;
+                                e.target.style.boxShadow = `0 0 0 2px ${theme.colors.primary}20`;
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = '#e5e7eb';
+                                e.target.style.boxShadow = 'none';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setCreatingFolder(folder.id)}
+                              className="p-1.5 rounded-lg transition-all"
+                              style={{ color: theme.colors.primary }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = `${theme.colors.primary}15`;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                              title="Criar subpasta"
+                            >
+                              <FolderPlus className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFolder(folder.id)}
+                              className="p-1.5 rounded-lg transition-all"
+                              style={{ color: '#606770' }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#F2F2F2';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                              title="Remover pasta"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Criar subpasta */}
+                          {creatingFolder === folder.id && (
+                            <div className="mb-3 p-3 bg-gray-50 border rounded-lg">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={newFolderName}
+                                  onChange={(e) => setNewFolderName(e.target.value)}
+                                  placeholder="Nome da subpasta"
+                                  className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none"
+                                  style={{ borderColor: theme.colors.primary }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      createFolder(folder.id);
+                                    } else if (e.key === 'Escape') {
+                                      setCreatingFolder(null);
+                                      setNewFolderName('');
+                                    }
+                                  }}
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => createFolder(folder.id)}
+                                  className="px-3 py-1 text-white rounded text-sm"
+                                  style={{ backgroundColor: theme.colors.primary }}
+                                >
+                                  Criar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCreatingFolder(null);
+                                    setNewFolderName('');
+                                  }}
+                                  className="px-3 py-1 border rounded text-sm"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Input para adicionar arquivos */}
+                          <div className="mb-3">
+                            <input
+                              type="file"
+                              multiple
+                              onChange={(e) => addFilesToFolder(folder.id, Array.from(e.target.files || []))}
+                              className="hidden"
+                              id={`file-${folder.id}`}
+                            />
+                            <label
+                              htmlFor={`file-${folder.id}`}
+                              className="inline-flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-all text-sm"
+                              style={{
+                                borderColor: '#e5e7eb',
+                                backgroundColor: 'white',
+                                color: '#606770'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = theme.colors.primary;
+                                e.currentTarget.style.color = theme.colors.primary;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#e5e7eb';
+                                e.currentTarget.style.color = '#606770';
+                              }}
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span className="font-medium">
+                                {folder.files.length > 0 ? `${folder.files.length} arquivo(s)` : 'Adicionar arquivos'}
+                              </span>
+                            </label>
+                          </div>
+
+                          {/* Lista de arquivos */}
+                          {folder.files.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              {folder.files.map((file, idx) => (
+                                <div
+                                  key={idx}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, file, folder.id)}
+                                  className="flex items-center gap-2 p-2 bg-gray-50 border rounded-lg cursor-move transition-all text-sm"
+                                  style={{ borderColor: '#e5e7eb' }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = theme.colors.primary;
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = '#e5e7eb';
+                                  }}
+                                >
+                                  <GripVertical className="w-4 h-4" style={{ color: theme.colors.primary }} />
+                                  <FileText className="w-4 h-4" style={{ color: theme.colors.primary }} />
+                                  <span className="flex-1 truncate" style={{ color: theme.colors.text }} title={file.name}>
+                                    {file.name}
+                                  </span>
+                                  <span className="text-xs" style={{ color: '#606770' }}>
+                                    ({(file.size / 1024).toFixed(1)} KB)
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeFileFromFolder(folder.id, file.name)}
+                                    className="p-1 rounded transition-all"
+                                    style={{ color: '#606770' }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = 'white';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }}
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Renderizar subpastas recursivamente */}
+                          {folder.subfolders.length > 0 && (
+                            <div className="mt-4 space-y-2">
+                              {folder.subfolders.map(subfolder => renderFolder(subfolder, level + 1))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div className="space-y-4">
+                      {mainFolders.map(folder => renderFolder(folder, 0))}
+                    </div>
+                  );
+                })()}
+
+                {/* Botão para criar pasta principal */}
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setCreatingFolder(null)}
+                    className="flex items-center gap-2 px-4 py-2 border-2 border-dashed rounded-lg transition-colors"
+                    style={{
+                      borderColor: theme.colors.primary,
+                      backgroundColor: 'transparent',
+                      color: theme.colors.primary
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = `${theme.colors.primary}10`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Criar Pasta Principal</span>
                   </button>
                 </div>
 
-                {folders.length > 0 && folders[0].name && folders[0].files.length > 0 && (
-                  <div className="mt-6 border rounded-lg p-4" style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-4 h-4" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
-                      <p className="text-sm font-medium" style={{ color: theme.colors.text }}>Estrutura:</p>
+                {/* Criar pasta principal */}
+                {creatingFolder === null && (
+                  <div className="mt-4 p-3 bg-gray-50 border rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newFolderName}
+                        onChange={(e) => setNewFolderName(e.target.value)}
+                        placeholder="Nome da pasta principal"
+                        className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none"
+                        style={{ borderColor: theme.colors.primary }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            createFolder(null);
+                          } else if (e.key === 'Escape') {
+                            setCreatingFolder(null);
+                            setNewFolderName('');
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => createFolder(null)}
+                        className="px-3 py-1 text-white rounded text-sm"
+                        style={{ backgroundColor: theme.colors.primary }}
+                      >
+                        Criar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreatingFolder(null);
+                          setNewFolderName('');
+                        }}
+                        className="px-3 py-1 border rounded text-sm"
+                      >
+                        Cancelar
+                      </button>
                     </div>
-                    <pre className="text-xs font-mono pl-2" style={{ color: '#606770' }}>
-                      {`${folders[0].name}/
-${folders.slice(1).map(f => `├── ${f.name || 'pasta'}/
-│   └── ${f.files.length} arquivo(s)`).join('\n')}${folders.length === 1 ? `└── ${folders[0].files.length} arquivo(s)` : ''}`}
-                    </pre>
                   </div>
                 )}
               </div>
@@ -757,10 +1117,12 @@ ${folders.slice(1).map(f => `├── ${f.name || 'pasta'}/
                 <h3 className="text-lg font-semibold" style={{ color: theme.colors.text }}>Como funciona</h3>
               </div>
               <ol className="space-y-2 list-decimal list-inside text-sm" style={{ color: '#606770' }}>
-                <li>A Pasta 1 será a pasta raiz do seu processo (ex: &quot;Comercial&quot;)</li>
-                <li>Adicione qualquer tipo de arquivo: .bpm, .bpmn, .pdf, .doc, .xlsx, etc.</li>
-                <li>Você pode ter arquivos direto na raiz ou organizados em subpastas</li>
-                <li>Para visualização: use arquivos .bpmn exportados do Bizagi Modeler</li>
+                <li><strong>Arquivos na Raiz:</strong> Adicione arquivos diretamente sem criar pastas</li>
+                <li><strong>Pastas Principais:</strong> Crie quantas pastas principais quiser para organizar seus processos</li>
+                <li><strong>Subpastas:</strong> Organize ainda mais criando subpastas dentro de qualquer pasta</li>
+                <li><strong>Drag and Drop:</strong> Arraste arquivos entre pastas para reorganizar facilmente</li>
+                <li><strong>Tipos de Arquivo:</strong> Aceita .bpm, .bpmn, .pdf, .doc, .xlsx, etc.</li>
+                <li><strong>Preview:</strong> Arquivos .bpmn mostram preview automático do diagrama</li>
               </ol>
             </div>
 
