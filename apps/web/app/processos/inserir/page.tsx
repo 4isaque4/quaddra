@@ -378,8 +378,23 @@ export default function InserirProcessoPage() {
     setError('');
 
     try {
+      // Remover pastas vazias antes de processar
+      const removeEmptyFolders = (folders: FolderConfig[]): FolderConfig[] => {
+        return folders.filter(folder => {
+          const hasFiles = folder.files.length > 0;
+          const hasSubfolders = removeEmptyFolders(folder.subfolders).length > 0;
+          return hasFiles || hasSubfolders;
+        }).map(folder => ({
+          ...folder,
+          subfolders: removeEmptyFolders(folder.subfolders)
+        }));
+      };
+      
+      // Filtrar pastas vazias antes de processar
+      const filteredMainFolders = removeEmptyFolders(mainFolders);
+      
       // Validações
-      const totalFiles = rootFiles.length + mainFolders.reduce((sum, folder) => {
+      const totalFiles = rootFiles.length + filteredMainFolders.reduce((sum, folder) => {
         const countFiles = (f: FolderConfig): number => {
           return f.files.length + f.subfolders.reduce((acc, sub) => acc + countFiles(sub), 0);
         };
@@ -390,25 +405,22 @@ export default function InserirProcessoPage() {
         throw new Error('Adicione pelo menos um arquivo');
       }
 
-      // Validar todas as pastas recursivamente
+      // Validar todas as pastas recursivamente (apenas verificar nomes, pastas vazias já foram removidas)
       const validateFolder = (folder: FolderConfig): void => {
         if (!folder.name.trim()) {
           throw new Error('Todas as pastas devem ter um nome');
         }
-        if (folder.files.length === 0 && folder.subfolders.length === 0) {
-          throw new Error(`A pasta "${folder.name}" não tem arquivos nem subpastas`);
-        }
         folder.subfolders.forEach(validateFolder);
       };
       
-      mainFolders.forEach(validateFolder);
+      filteredMainFolders.forEach(validateFolder);
 
       // Determinar nome do processo
       let processName = '';
       
-      if (mainFolders.length > 0 && mainFolders[0].name.trim()) {
+      if (filteredMainFolders.length > 0 && filteredMainFolders[0].name.trim()) {
         // Se há pasta principal, usar o nome dela
-        processName = mainFolders[0].name.trim();
+        processName = filteredMainFolders[0].name.trim();
       } else if (rootFiles.length > 0) {
         // Se há arquivos na raiz, usar o nome do primeiro arquivo .bpmn (sem extensão)
         const rootBpmn = rootFiles.find(f => f.name.endsWith('.bpmn'));
@@ -445,13 +457,13 @@ export default function InserirProcessoPage() {
           }
           return null;
         };
-        mainFile = findFirstBpmn(mainFolders);
+        mainFile = findFirstBpmn(filteredMainFolders);
         if (mainFile) mainFileName = mainFile.name;
       }
 
       // Se não encontrou .bpmn, usar o primeiro arquivo disponível
       if (!mainFile) {
-        mainFile = rootFiles.length > 0 ? rootFiles[0] : (mainFolders[0]?.files[0] || null);
+        mainFile = rootFiles.length > 0 ? rootFiles[0] : (filteredMainFolders[0]?.files[0] || null);
         if (mainFile) mainFileName = mainFile.name;
       }
 
@@ -481,8 +493,8 @@ export default function InserirProcessoPage() {
         });
       }
 
-      // Adicionar todas as pastas principais e suas subpastas
-      mainFolders.forEach(folder => {
+      // Adicionar todas as pastas principais e suas subpastas (apenas pastas não vazias)
+      filteredMainFolders.forEach(folder => {
         folderStructure.push(...flattenFolderStructure(folder));
       });
 
