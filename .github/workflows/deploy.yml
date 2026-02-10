@@ -60,16 +60,39 @@ jobs:
             
             # Build da aplicação
             cd apps/web
+            
+            # Limpar cache do Next.js antes do build
+            echo "🧹 Limpando cache do Next.js..."
+            rm -rf .next
+            rm -rf node_modules/.cache
+            
+            # Build da aplicação
+            echo "🔨 Executando build..."
             npm run build
+            
             cd ../..
             
             # Parar e deletar processo antigo do PM2
+            echo "🛑 Parando aplicação antiga..."
             pm2 stop quaddra-web 2>/dev/null || true
             pm2 delete quaddra-web 2>/dev/null || true
             
+            # Aguardar um pouco para garantir que o processo foi encerrado
+            sleep 2
+            
+            # Limpar cache do PM2
+            pm2 flush quaddra-web 2>/dev/null || true
+            
             # Iniciar aplicação com PM2 usando o ecosystem.config.js
+            echo "🚀 Iniciando aplicação..."
             pm2 start apps/web/ecosystem.config.js
             pm2 save
+            
+            # Aguardar aplicação iniciar
+            sleep 3
+            
+            # Verificar se a aplicação está rodando
+            pm2 describe quaddra-web
             
             echo "✅ Deploy concluído com sucesso!"
             pm2 status
