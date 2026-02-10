@@ -80,11 +80,9 @@ export async function DELETE(request: Request) {
       
       if (fileSlug === slug) {
         filePathFound = fileInfo.path;
-        // Encontrar a pasta que contém este arquivo
-        const pathParts = fileInfo.path.split('/');
-        if (pathParts.length > 1) {
-          folderToDelete = pathParts[0]; // Primeira pasta do caminho
-        }
+        // NÃO definir folderToDelete aqui - vamos deletar apenas o arquivo específico
+        // folderToDelete será usado apenas se não encontrarmos o arquivo específico
+        console.log('[DELETE] Arquivo encontrado localmente:', fileInfo.path);
         break;
       }
     }
@@ -107,22 +105,38 @@ export async function DELETE(request: Request) {
     }
 
     let deletedLocal = false;
-    if (folderToDelete) {
-      const folderPath = join(bpmnDir, folderToDelete);
-      if (existsSync(folderPath)) {
-        console.log('[DELETE] Deletando pasta local:', folderPath);
-        rmSync(folderPath, { recursive: true, force: true });
-        deletedLocal = true;
-        console.log('[DELETE] Pasta local deletada com sucesso:', folderToDelete);
-      }
-    } else if (filePathFound) {
-      // Arquivo na raiz encontrado
+    // Priorizar deletar apenas o arquivo específico, não a pasta inteira
+    if (filePathFound) {
       const filePath = join(bpmnDir, filePathFound);
       if (existsSync(filePath)) {
-        console.log('[DELETE] Deletando arquivo na raiz:', filePath);
+        console.log('[DELETE] Deletando arquivo específico:', filePath);
         rmSync(filePath, { force: true });
         deletedLocal = true;
-        console.log('[DELETE] Arquivo na raiz deletado:', filePathFound);
+        console.log('[DELETE] Arquivo deletado com sucesso:', filePathFound);
+        
+        // Tentar remover pasta pai se estiver vazia (mas não forçar)
+        const pathParts = filePathFound.split('/');
+        if (pathParts.length > 1) {
+          const parentFolder = join(bpmnDir, pathParts[0]);
+          try {
+            const contents = readdirSync(parentFolder);
+            if (contents.length === 0) {
+              console.log('[DELETE] Removendo pasta vazia:', parentFolder);
+              rmSync(parentFolder, { recursive: true, force: true });
+            }
+          } catch (e) {
+            // Ignorar erros ao verificar pasta
+          }
+        }
+      }
+    } else if (folderToDelete) {
+      // Fallback: se não encontrou arquivo específico, deletar pasta (com cuidado)
+      const folderPath = join(bpmnDir, folderToDelete);
+      if (existsSync(folderPath)) {
+        console.log('[DELETE] ⚠️ Arquivo específico não encontrado, deletando pasta inteira:', folderPath);
+        rmSync(folderPath, { recursive: true, force: true });
+        deletedLocal = true;
+        console.log('[DELETE] Pasta local deletada:', folderToDelete);
       }
     } else {
       console.warn('[DELETE] Arquivo não encontrado localmente para o slug:', slug);
@@ -149,10 +163,11 @@ export async function DELETE(request: Request) {
       // Variável para arquivo a deletar no GitHub
       let githubFileToDelete: string | null = null;
       
-      // Se encontramos localmente, usar essa informação
-      if (filePathFound && !folderToDelete) {
-        // Arquivo na raiz encontrado localmente
-        githubFileToDelete = filePathFound;
+      // Se encontramos o arquivo localmente, usar o caminho dele para deletar no GitHub
+      if (filePathFound) {
+        // Converter caminho local para caminho GitHub (normalizar separadores)
+        githubFileToDelete = filePathFound.replace(/\\/g, '/');
+        console.log('[DELETE] Usando caminho local para deletar no GitHub:', githubFileToDelete);
       } else if (!folderToDelete && !filePathFound) {
         // Não encontramos localmente, buscar no GitHub usando o slug completo
         console.log('[DELETE] Buscando processo no GitHub pelo slug:', slug);
@@ -182,15 +197,9 @@ export async function DELETE(request: Request) {
             const fileSlug = normalizeSlug(filePathWithoutExt);
             
             if (fileSlug === slug) {
-              // Encontrar a pasta que contém este arquivo
-              const pathParts = item.path.split('/');
-              if (pathParts.length > 1) {
-                folderToDelete = pathParts[0]; // Primeira pasta do caminho
-                console.log('[DELETE] Pasta encontrada no GitHub:', folderToDelete, '(arquivo:', item.path, ')');
-              } else {
-                githubFileToDelete = item.path;
-                console.log('[DELETE] Arquivo encontrado no GitHub (raiz):', githubFileToDelete);
-              }
+              // Encontrar o arquivo específico - deletar apenas ele, não a pasta inteira
+              githubFileToDelete = item.path;
+              console.log('[DELETE] Arquivo específico encontrado no GitHub:', githubFileToDelete);
               break;
             }
           }
@@ -297,6 +306,109 @@ export async function DELETE(request: Request) {
         });
       }
 
+      // Se encontramos o arquivo específico localmente, buscar no GitHub para deletar apenas ele
+      if (filePathFound && !githubFileToDelete) {
+        // Buscar o arquivo específico no GitHub usando o caminho encontrado localmente
+        const githubPath = filePathFound.replace(/\\/g, '/');
+        console.log('[DELETE] Buscando arquivo específico no GitHub:', githubPath);
+        
+        try {
+          // Verificar se o arquivo existe no GitHub
+          await octokit.repos.getContent({
+            owner: GITHUB_OWNER,
+            repo: GITHUB_REPO,
+            path: githubPath,
+            ref: GITHUB_BRANCH
+          });
+          
+          // Arquivo existe, vamos deletar apenas ele
+          githubFileToDelete = githubPath;
+          console.log('[DELETE] Arquivo específico encontrado no GitHub, será deletado:', githubFileToDelete);
+        } catch (error: any) {
+          if (error.status === 404) {
+            console.log('[DELETE] Arquivo não encontrado no GitHub:', githubPath);
+          } else {
+            console.warn('[DELETE] Erro ao verificar arquivo no GitHub:', error.message);
+          }
+        }
+      }
+
+      // Se temos um arquivo específico para deletar, deletar apenas ele
+      if (githubFileToDelete) {
+        console.log('[DELETE] Deletando arquivo específico do GitHub:', githubFileToDelete);
+        
+        // Obter referência do branch
+        const { data: refData } = await octokit.git.getRef({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          ref: `heads/${GITHUB_BRANCH}`
+        });
+
+        const latestCommitSha = refData.object.sha;
+
+        // Obter árvore do commit
+        const { data: commitData } = await octokit.git.getCommit({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          commit_sha: latestCommitSha
+        });
+
+        const baseTreeSha = commitData.tree.sha;
+
+        // Obter árvore completa recursivamente
+        const { data: currentTree } = await octokit.git.getTree({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          tree_sha: baseTreeSha,
+          recursive: 'true'
+        });
+
+        // Filtrar apenas o arquivo específico
+        const newTree = currentTree.tree
+          .filter(item => item.path !== githubFileToDelete)
+          .map(item => ({
+            path: item.path!,
+            mode: item.mode as '100644' | '100755' | '040000' | '160000' | '120000',
+            type: item.type as 'blob' | 'tree' | 'commit',
+            sha: item.sha!
+          }));
+
+        // Criar nova árvore
+        const { data: newTreeData } = await octokit.git.createTree({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          tree: newTree,
+          base_tree: baseTreeSha
+        });
+
+        // Criar commit
+        const { data: newCommit } = await octokit.git.createCommit({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          message: `chore: deletar processo ${githubFileToDelete}`,
+          tree: newTreeData.sha,
+          parents: [latestCommitSha]
+        });
+
+        // Atualizar referência
+        await octokit.git.updateRef({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          ref: `heads/${GITHUB_BRANCH}`,
+          sha: newCommit.sha
+        });
+
+        console.log('[DELETE] Arquivo específico deletado do GitHub com sucesso');
+
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Processo deletado com sucesso',
+          deletedLocal,
+          deletedGitHub: true,
+          file: githubFileToDelete
+        });
+      }
+
       // Verificar se encontramos algo para deletar no GitHub
       if (!folderToDelete && !githubFileToDelete) {
         console.warn('[DELETE] Processo não encontrado no GitHub para o slug:', slug);
@@ -308,7 +420,9 @@ export async function DELETE(request: Request) {
         });
       }
 
-      console.log('[DELETE] Deletando pasta do GitHub:', folderToDelete);
+      // Fallback: deletar pasta inteira apenas se não encontrou arquivo específico
+      if (folderToDelete && !filePathFound) {
+        console.log('[DELETE] ⚠️ Deletando pasta inteira do GitHub (fallback):', folderToDelete);
 
       // Obter referência do branch
       const { data: refData } = await octokit.git.getRef({

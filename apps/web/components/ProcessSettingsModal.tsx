@@ -34,7 +34,7 @@ export default function ProcessSettingsModal({
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>('docs');
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
@@ -81,18 +81,22 @@ export default function ProcessSettingsModal({
       const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}/folders`);
       if (response.ok) {
         const data = await response.json();
-        setAvailableFolders(data.folders || ['docs']);
-        // Se docs não está na lista, adicionar como padrão
-        if (!data.folders || data.folders.length === 0) {
-          setAvailableFolders(['docs']);
+        // Filtrar 'docs' da lista e usar apenas pastas customizadas
+        const customFolders = (data.folders || []).filter((f: string) => f !== 'docs');
+        setAvailableFolders(customFolders);
+        // Se não há pastas, começar vazio para o usuário criar
+        if (customFolders.length === 0) {
+          setSelectedFolder('__new__');
         }
       } else {
-        // Se a API não existir ainda, usar padrão
-        setAvailableFolders(['docs']);
+        // Se a API não existir ainda, começar vazio
+        setAvailableFolders([]);
+        setSelectedFolder('__new__');
       }
     } catch (error) {
       console.error('Erro ao carregar pastas:', error);
-      setAvailableFolders(['docs']);
+      setAvailableFolders([]);
+      setSelectedFolder('__new__');
     }
   };
 
@@ -391,11 +395,13 @@ export default function ProcessSettingsModal({
                       e.target.style.boxShadow = 'none';
                     }}
                   >
-                    {availableFolders.map((folder) => (
-                      <option key={folder} value={folder}>
-                        {folder === 'docs' ? 'docs/ (padrão)' : folder}
-                      </option>
-                    ))}
+                    {availableFolders.length > 0 ? (
+                      availableFolders.map((folder) => (
+                        <option key={folder} value={folder}>
+                          {folder}
+                        </option>
+                      ))
+                    ) : null}
                     <option value="__new__">+ Criar nova pasta</option>
                   </select>
                   {selectedFolder === '__new__' && (
@@ -418,7 +424,9 @@ export default function ProcessSettingsModal({
                         e.target.style.borderColor = '#d1d5db';
                         e.target.style.boxShadow = 'none';
                         if (!e.target.value.trim()) {
-                          setSelectedFolder('docs');
+                          setSelectedFolder('__new__');
+                        } else {
+                          setSelectedFolder(e.target.value.trim().replace(/[^a-zA-Z0-9-_]/g, '-'));
                         }
                       }}
                     />

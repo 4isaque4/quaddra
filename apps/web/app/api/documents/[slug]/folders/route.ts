@@ -93,8 +93,8 @@ export async function GET(
       processDir = join(bpmnDir, processFolder);
     }
 
-    // Buscar todas as pastas dentro do processo
-    const availableFolders: string[] = ['docs']; // Sempre incluir docs como padrão
+    // Buscar todas as pastas dentro do processo (sem incluir 'docs' como padrão)
+    const availableFolders: string[] = [];
     
     if (existsSync(processDir)) {
       const processFolders = findFoldersRecursive(processDir, '');
