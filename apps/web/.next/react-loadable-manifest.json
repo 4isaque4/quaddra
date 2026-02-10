@@ -1,1 +1,8 @@
-{}
+{
+  "app\\processos\\inserir\\page.tsx -> bpmn-js/dist/bpmn-navigated-viewer.development.js": {
+    "id": "app\\processos\\inserir\\page.tsx -> bpmn-js/dist/bpmn-navigated-viewer.development.js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_bpmn-js_dist_bpmn-navigated-viewer_development_js.js"
+    ]
+  }
+}

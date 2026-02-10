@@ -5,7 +5,8 @@ import { join, dirname, relative } from 'path';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
-const GITHUB_REPO = process.env.GITHUB_REPO_PROCESSOS || 'quaddra-processos';
+const GITHUB_REPO_QUADDRA = process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
+const GITHUB_REPO_VALESHOP = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
@@ -67,13 +68,16 @@ function copyDirectory(src: string, dest: string) {
 
 export async function POST(request: Request) {
   try {
-    const { processSlug, targetFolderPath } = await request.json();
+    const { processSlug, targetFolderPath, clientType = 'quaddra' } = await request.json();
 
     if (!processSlug) {
       return NextResponse.json({ error: 'Slug do processo é obrigatório' }, { status: 400 });
     }
 
-    console.log('[MOVE] Movendo processo:', processSlug, 'para:', targetFolderPath || 'raiz');
+    // Determinar repositório baseado no cliente
+    const GITHUB_REPO = clientType === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA;
+
+    console.log('[MOVE] Movendo processo:', processSlug, 'para:', targetFolderPath || 'raiz', '- Repositório:', GITHUB_REPO);
 
     if (!GITHUB_TOKEN) {
       return NextResponse.json({ error: 'GITHUB_TOKEN não configurado' }, { status: 500 });

@@ -32,18 +32,24 @@ declare namespace __next_route_internal_types__ {
     | `/`
     | `/api/delete-processo`
     | `/api/descriptions`
+    | `/api/manage-folder`
+    | `/api/move-processo`
     | `/api/rename-file`
     | `/api/sync-github`
     | `/api/sync-processos`
     | `/api/upload-processo`
+    | `/vale-shop`
+    | `/vale-shop/processos`
+    | `/vale-shop/processos/inserir`
     | `/processos`
     | `/processos/inserir`
   type DynamicRoutes<T extends string = string> = 
+    | `/api/bpmn/${SafeSlug<T>}`
     | `/api/content/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}`
     | `/api/documents/${SafeSlug<T>}/download/${SafeSlug<T>}`
     | `/api/popit/${SafeSlug<T>}/${SafeSlug<T>}`
-    | `/api/bpmn/${SafeSlug<T>}`
+    | `/vale-shop/processos/${SafeSlug<T>}`
     | `/processos/${SafeSlug<T>}`
 
   type RouteImpl<T> = 

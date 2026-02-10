@@ -1,8 +1,4 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/processos/page": "app/processos/page.js",
-  "/processos/[slug]/page": "app/processos/[slug]/page.js",
-  "/icon.svg/route": "app/icon.svg/route.js",
-  "/api/content/[slug]/route": "app/api/content/[slug]/route.js",
-  "/api/documents/[slug]/route": "app/api/documents/[slug]/route.js"
+  "/vale-shop/processos/inserir/page": "app/vale-shop/processos/inserir/page.js",
+  "/vale-shop/processos/page": "app/vale-shop/processos/page.js"
 }
