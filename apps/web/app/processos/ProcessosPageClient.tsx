@@ -111,16 +111,34 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
         throw new Error(result.error || 'Erro ao deletar processo');
       }
 
-      // Remover da lista
+      // Verificar se foi deletado do GitHub
+      if (!result.deletedGitHub && result.githubError) {
+        mostrarNotificacao('erro', 
+          `Processo deletado localmente, mas erro ao deletar do GitHub: ${result.githubError}. ` +
+          `O processo ainda existe no repositório.`
+        );
+        setProcessoADeletar(null);
+        // Recarregar mesmo assim para atualizar a lista
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+        return;
+      }
+
+      // Remover da lista imediatamente
       setProcessos(processos.filter(p => p.slug !== processoADeletar.slug));
       setProcessoADeletar(null);
       
-      mostrarNotificacao('sucesso', `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado com sucesso!`);
+      const successMsg = result.deletedGitHub 
+        ? `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado com sucesso do GitHub e localmente!`
+        : `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado localmente!`;
       
-      // Recarregar a página após 2 segundos para garantir que os dados estejam atualizados
+      mostrarNotificacao('sucesso', successMsg);
+      
+      // Recarregar a página após 1.5 segundos para garantir que os dados estejam atualizados
       setTimeout(() => {
         window.location.reload();
-      }, 2000);
+      }, 1500);
     } catch (error: any) {
       console.error('Erro ao deletar:', error);
       mostrarNotificacao('erro', error.message || 'Erro ao deletar processo');
@@ -321,6 +339,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
         isOpen={isOrganizationModalOpen}
         onClose={() => setIsOrganizationModalOpen(false)}
         processos={processos}
+        clientType={basePath.includes('vale-shop') ? 'valeshop' : 'quaddra'}
         onUpdate={() => {
           // Recarregar processos
           window.location.reload();

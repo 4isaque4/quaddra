@@ -129,10 +129,34 @@ export async function DELETE(request: Request) {
     }
 
     // 2. Deletar do GitHub
+    if (!GITHUB_TOKEN) {
+      console.warn('[DELETE] ⚠️ GitHub token não configurado - deletando apenas localmente');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Processo deletado localmente (GitHub token não configurado)',
+        deletedLocal,
+        deletedGitHub: false,
+        githubError: 'Token não configurado'
+      });
+    }
+
     try {
-      // Se não encontramos a pasta localmente, tentar encontrar no GitHub
+      console.log('[DELETE] Iniciando deleção no GitHub...');
+      console.log('[DELETE] Repositório:', GITHUB_REPO);
+      console.log('[DELETE] Pasta encontrada localmente:', folderToDelete);
+      console.log('[DELETE] Arquivo encontrado localmente:', filePathFound);
+      
+      // Variável para arquivo a deletar no GitHub
       let githubFileToDelete: string | null = null;
-      if (!folderToDelete && !filePathFound) {
+      
+      // Se encontramos localmente, usar essa informação
+      if (filePathFound && !folderToDelete) {
+        // Arquivo na raiz encontrado localmente
+        githubFileToDelete = filePathFound;
+      } else if (!folderToDelete && !filePathFound) {
+        // Não encontramos localmente, buscar no GitHub usando o slug completo
+        console.log('[DELETE] Buscando processo no GitHub pelo slug:', slug);
+        
         // Obter referência do branch
         const { data: refData } = await octokit.git.getRef({
           owner: GITHUB_OWNER,
@@ -150,25 +174,51 @@ export async function DELETE(request: Request) {
           recursive: 'true'
         });
 
-        // Procurar arquivo BPMN que corresponde ao slug
+        // Procurar arquivo BPMN que corresponde ao slug completo (caminho completo normalizado)
         for (const item of currentTree.tree || []) {
           if (item.type === 'blob' && item.path?.toLowerCase().endsWith('.bpmn')) {
-            const fileSlug = normalizeSlug(item.path.replace(/\.bpmn$/i, ''));
+            // Normalizar o caminho completo do arquivo (sem extensão) para comparar com o slug
+            const filePathWithoutExt = item.path.replace(/\.bpmn$/i, '');
+            const fileSlug = normalizeSlug(filePathWithoutExt);
+            
             if (fileSlug === slug) {
-              // Extrair a pasta do caminho ou o arquivo
+              // Encontrar a pasta que contém este arquivo
               const pathParts = item.path.split('/');
               if (pathParts.length > 1) {
-                folderToDelete = pathParts[0];
+                folderToDelete = pathParts[0]; // Primeira pasta do caminho
+                console.log('[DELETE] Pasta encontrada no GitHub:', folderToDelete, '(arquivo:', item.path, ')');
               } else {
                 githubFileToDelete = item.path;
+                console.log('[DELETE] Arquivo encontrado no GitHub (raiz):', githubFileToDelete);
               }
               break;
             }
           }
         }
-      } else if (filePathFound && !folderToDelete) {
-        // Arquivo na raiz encontrado localmente
-        githubFileToDelete = filePathFound;
+        
+        // Se ainda não encontrou, tentar buscar pela pasta diretamente (slug pode ser só o nome da pasta)
+        if (!folderToDelete && !githubFileToDelete) {
+          // Listar pastas na raiz do repositório
+          const { data: contents } = await octokit.repos.getContent({
+            owner: GITHUB_OWNER,
+            repo: GITHUB_REPO,
+            path: '',
+            ref: GITHUB_BRANCH
+          });
+
+          if (Array.isArray(contents)) {
+            for (const item of contents) {
+              if (item.type === 'dir' && !item.name.startsWith('.')) {
+                const folderSlug = normalizeSlug(item.name);
+                if (folderSlug === slug) {
+                  folderToDelete = item.name;
+                  console.log('[DELETE] Pasta encontrada no GitHub pelo nome:', folderToDelete);
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
 
       // Se é arquivo na raiz, deletar apenas o arquivo
@@ -247,12 +297,14 @@ export async function DELETE(request: Request) {
         });
       }
 
-      if (!folderToDelete) {
-        console.warn('[DELETE] Pasta não encontrada no GitHub para o slug:', slug);
+      // Verificar se encontramos algo para deletar no GitHub
+      if (!folderToDelete && !githubFileToDelete) {
+        console.warn('[DELETE] Processo não encontrado no GitHub para o slug:', slug);
         return NextResponse.json({ 
           success: true, 
           message: 'Processo deletado localmente (não encontrado no GitHub)',
-          deletedLocal 
+          deletedLocal,
+          deletedGitHub: false
         });
       }
 
@@ -330,13 +382,21 @@ export async function DELETE(request: Request) {
       });
 
     } catch (githubError: any) {
-      console.error('[DELETE] Erro ao deletar do GitHub:', githubError);
+      console.error('[DELETE] ❌ Erro ao deletar do GitHub:', githubError.message);
+      console.error('[DELETE] Erro completo:', JSON.stringify(githubError, null, 2));
+      console.error('[DELETE] Status:', githubError.status);
+      console.error('[DELETE] Response:', githubError.response?.data);
+      
+      // Retornar erro para que o frontend saiba que falhou
       return NextResponse.json({ 
-        success: true, 
-        message: 'Processo deletado localmente, mas erro ao deletar do GitHub',
+        success: false,
+        error: 'Erro ao deletar processo do GitHub',
+        message: `Processo deletado localmente, mas falhou ao deletar do GitHub: ${githubError.message}`,
         deletedLocal,
-        githubError: githubError.message 
-      });
+        deletedGitHub: false,
+        githubError: githubError.message,
+        githubErrorDetails: githubError.response?.data || githubError
+      }, { status: 500 });
     }
 
   } catch (error: any) {

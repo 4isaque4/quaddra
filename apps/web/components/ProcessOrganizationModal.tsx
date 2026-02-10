@@ -24,13 +24,15 @@ interface ProcessOrganizationModalProps {
   onClose: () => void;
   processos: ProcessoItem[];
   onUpdate: () => void;
+  clientType?: 'quaddra' | 'valeshop'; // Tipo de cliente para determinar repositório
 }
 
 export default function ProcessOrganizationModal({
   isOpen,
   onClose,
   processos,
-  onUpdate
+  onUpdate,
+  clientType = 'quaddra'
 }: ProcessOrganizationModalProps) {
   const { theme } = useTheme();
   const [folderStructure, setFolderStructure] = useState<FolderNode[]>([]);
@@ -138,17 +140,23 @@ export default function ProcessOrganizationModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             processSlug: processo.slug,
-            targetFolderPath: targetFolderPath || null
+            targetFolderPath: targetFolderPath || null,
+            clientType: clientType
           })
         });
 
         const data = await response.json();
 
-        if (response.ok) {
-          mostrarNotificacao('sucesso', 'Processo movido com sucesso!');
-          onUpdate();
+        if (response.ok && data.success) {
+          const targetMsg = targetFolderPath ? `para a pasta "${targetFolderPath}"` : 'para a raiz';
+          mostrarNotificacao('sucesso', `Processo "${processo.nome}" movido com sucesso ${targetMsg}!`);
+          // Aguardar um pouco antes de atualizar para dar tempo do GitHub processar
+          setTimeout(() => {
+            onUpdate();
+          }, 1000);
         } else {
-          mostrarNotificacao('erro', data.error || 'Erro ao mover processo');
+          const errorMsg = data.error || data.details || 'Erro ao mover processo';
+          mostrarNotificacao('erro', `Erro ao mover processo: ${errorMsg}`);
         }
       }
 
