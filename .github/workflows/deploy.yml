@@ -33,6 +33,7 @@ jobs:
           echo "🔍 Verificando conectividade com VPS..."
           echo "📡 Tentando conectar na porta 22..."
           timeout 10 bash -c "echo > /dev/tcp/${{ secrets.VPS_HOST }}/22" 2>/dev/null && echo "✅ Servidor acessível" || echo "⚠️ Servidor pode estar inacessível (continuando mesmo assim...)"
+          echo "🔐 Testando autenticação SSH..."
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
