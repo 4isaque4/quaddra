@@ -52,12 +52,10 @@ export async function POST(request: Request) {
     const formData = await request.formData()
     const processNameRaw = (formData.get('processName') as string | null) || ''
     const processName = sanitizeSegment(processNameRaw)
-    const mainFile = formData.get('mainFile') as File | null
     const clientType = ((formData.get('clientType') as string | null) || 'quaddra').toLowerCase()
     const repo = clientType === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA
 
     if (!processName) return jsonError('Nome do processo é obrigatório', 400)
-    if (!mainFile) return jsonError('Arquivo principal é obrigatório', 400)
 
     const folderStructureRaw = formData.get('folderStructure') as string | null
     let folderStructure: FolderConfig[] = []
