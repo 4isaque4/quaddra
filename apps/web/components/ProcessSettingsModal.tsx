@@ -35,6 +35,7 @@ export default function ProcessSettingsModal({
   const [isUploading, setIsUploading] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [newFolderName, setNewFolderName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
@@ -56,6 +57,7 @@ export default function ProcessSettingsModal({
       }
       setNewFileName(originalFileName);
       setShowFileRename(false);
+      setNewFolderName(''); // Resetar nome da nova pasta ao abrir
       
       // Carregar documentos e pastas disponíveis
       loadDocuments();
@@ -108,7 +110,9 @@ export default function ProcessSettingsModal({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('folder', selectedFolder);
+      // Se está criando nova pasta, usar o nome digitado, senão usar a pasta selecionada
+      const folderToUse = selectedFolder === '__new__' ? newFolderName.trim() : selectedFolder;
+      formData.append('folder', folderToUse);
 
       const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
         method: 'POST',
@@ -383,7 +387,13 @@ export default function ProcessSettingsModal({
                   </label>
                   <select
                     value={selectedFolder}
-                    onChange={(e) => setSelectedFolder(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedFolder(e.target.value);
+                      // Limpar nome da nova pasta se selecionou uma pasta existente
+                      if (e.target.value !== '__new__') {
+                        setNewFolderName('');
+                      }
+                    }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none mb-3"
                     style={{ borderColor: '#d1d5db' }}
                     onFocus={(e) => {
@@ -408,12 +418,11 @@ export default function ProcessSettingsModal({
                     <input
                       type="text"
                       placeholder="Nome da nova pasta (ex: pop-it, contratos)"
-                      value={selectedFolder === '__new__' ? '' : selectedFolder}
+                      value={newFolderName}
                       onChange={(e) => {
-                        const newFolder = e.target.value.trim().replace(/[^a-zA-Z0-9-_]/g, '-');
-                        if (newFolder) {
-                          setSelectedFolder(newFolder);
-                        }
+                        // Permitir digitação livre, apenas sanitizar para exibição
+                        const sanitized = e.target.value.replace(/[^a-zA-Z0-9-_\s]/g, '');
+                        setNewFolderName(sanitized);
                       }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none mt-2"
                       onFocus={(e) => {
@@ -423,12 +432,11 @@ export default function ProcessSettingsModal({
                       onBlur={(e) => {
                         e.target.style.borderColor = '#d1d5db';
                         e.target.style.boxShadow = 'none';
-                        if (!e.target.value.trim()) {
-                          setSelectedFolder('__new__');
-                        } else {
-                          setSelectedFolder(e.target.value.trim().replace(/[^a-zA-Z0-9-_]/g, '-'));
-                        }
+                        // Sanitizar ao perder o foco
+                        const sanitized = e.target.value.trim().replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-');
+                        setNewFolderName(sanitized);
                       }}
+                      autoFocus
                     />
                   )}
                 </div>
@@ -446,19 +454,19 @@ export default function ProcessSettingsModal({
                     className="w-full px-4 py-2 text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: theme.colors.primary }}
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading || selectedFolder === '__new__'}
+                    disabled={isUploading || (selectedFolder === '__new__' && !newFolderName.trim())}
                     onMouseEnter={(e) => {
-                      if (!isUploading && selectedFolder !== '__new__') {
+                      if (!isUploading && !(selectedFolder === '__new__' && !newFolderName.trim())) {
                         e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isUploading && selectedFolder !== '__new__') {
+                      if (!isUploading && !(selectedFolder === '__new__' && !newFolderName.trim())) {
                         e.currentTarget.style.backgroundColor = theme.colors.primary;
                       }
                     }}
                   >
-                    {isUploading ? 'Enviando...' : `Fazer Upload para ${selectedFolder === '__new__' ? '...' : selectedFolder}/`}
+                    {isUploading ? 'Enviando...' : `Fazer Upload para ${selectedFolder === '__new__' ? (newFolderName.trim() || 'nova pasta') : selectedFolder}/`}
                   </button>
                   <p className="text-xs text-gray-500 mt-2">
                     Formatos aceitos: PDF, DOCX, DOC, XLSX, XLS, TXT, PNG, JPG

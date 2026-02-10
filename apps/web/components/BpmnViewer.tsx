@@ -842,18 +842,21 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             const xmlResponse = await fetch(bpmnUrl);
             if (xmlResponse.ok && ref.current) {
               const xmlText = await xmlResponse.text();
+              const primaryColor = theme?.colors?.primary || '#0367A6';
+              const textColor = theme?.colors?.text || '#1a1a1a';
+              const textSecondaryColor = theme?.colors?.textSecondary || '#666';
               ref.current.innerHTML = `
-                <div style="padding:20px;color:#f55;text-align:center;">
-                  <h3>Erro ao renderizar BPMN</h3>
-                  <p>${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
+                <div style="padding:20px;background-color:#F0F7FF;border:2px solid ${primaryColor};border-radius:8px;text-align:center;">
+                  <h3 style="color:${primaryColor};font-size:18px;font-weight:600;margin-bottom:12px;">Erro ao renderizar BPMN</h3>
+                  <p style="color:${textColor};margin-bottom:8px;">${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
                   <details style="margin-top:10px;text-align:left;max-width:800px;margin:10px auto;">
-                    <summary>Detalhes técnicos</summary>
-                    <p><strong>URL BPMN:</strong> ${bpmnUrl}</p>
-                    <p><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
-                    <p><strong>Erro:</strong> ${err instanceof Error ? err.message : 'N/A'}</p>
-                    <div style="margin-top:15px;padding:10px;background:#f8f9fa;border-radius:4px;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;text-align:left;">
-                      <strong>XML BPMN (primeiros 1000 caracteres):</strong><br/>
-                      ${xmlText.substring(0, 1000)}...
+                    <summary style="color:${primaryColor};cursor:pointer;">Detalhes técnicos</summary>
+                    <p style="color:${textSecondaryColor};font-size:14px;margin-top:8px;"><strong>URL BPMN:</strong> ${bpmnUrl}</p>
+                    <p style="color:${textSecondaryColor};font-size:14px;"><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
+                    <p style="color:${textSecondaryColor};font-size:14px;"><strong>Erro:</strong> ${err instanceof Error ? err.message : 'N/A'}</p>
+                    <div style="margin-top:15px;padding:10px;background:#ffffff;border:1px solid ${primaryColor};border-radius:4px;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;text-align:left;">
+                      <strong style="color:${primaryColor};">XML BPMN (primeiros 1000 caracteres):</strong><br/>
+                      <span style="color:${textSecondaryColor};">${xmlText.substring(0, 1000)}...</span>
                     </div>
                   </details>
                 </div>
@@ -863,15 +866,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             }
           } catch (fallbackError) {
             if (ref.current) {
-              ref.current.innerHTML = `<div style="padding:20px;color:#f55;text-align:center;">
-                <h3>Erro ao carregar BPMN</h3>
-                <p>${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
-                <p><strong>Erro no fallback:</strong> ${fallbackError instanceof Error ? fallbackError.message : 'N/A'}</p>
+              const primaryColor = theme?.colors?.primary || '#0367A6';
+              const textColor = theme?.colors?.text || '#1a1a1a';
+              const textSecondaryColor = theme?.colors?.textSecondary || '#666';
+              ref.current.innerHTML = `<div style="padding:20px;background-color:#F0F7FF;border:2px solid ${primaryColor};border-radius:8px;text-align:center;">
+                <h3 style="color:${primaryColor};font-size:18px;font-weight:600;margin-bottom:12px;">Erro ao carregar BPMN</h3>
+                <p style="color:${textColor};margin-bottom:8px;">${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
+                <p style="color:${textSecondaryColor};font-size:14px;"><strong>Erro no fallback:</strong> ${fallbackError instanceof Error ? fallbackError.message : 'N/A'}</p>
                 <details style="margin-top:10px;text-align:left;max-width:500px;margin:10px auto;">
-                  <summary>Detalhes técnicos</summary>
-                  <p><strong>URL BPMN:</strong> ${bpmnUrl}</p>
-                  <p><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
-                  <p><strong>Erro:</strong> ${err instanceof Error ? err.stack : 'N/A'}</p>
+                  <summary style="color:${primaryColor};cursor:pointer;">Detalhes técnicos</summary>
+                  <p style="color:${textSecondaryColor};font-size:12px;margin-top:8px;"><strong>URL BPMN:</strong> ${bpmnUrl}</p>
+                  <p style="color:${textSecondaryColor};font-size:12px;"><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
+                  <p style="color:${textSecondaryColor};font-size:12px;"><strong>Erro:</strong> ${err instanceof Error ? err.stack : 'N/A'}</p>
                 </details>
               </div>`;
             }
@@ -1072,12 +1078,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   if (error) {
     return (
-      <div className="w-full p-6 bg-orange-50 border border-orange-300 rounded-lg">
-        <h3 className="text-lg font-semibold mb-2" style={{ color: theme.colors.text }}>Erro ao carregar BPMN</h3>
-        <p className="mb-4" style={{ color: theme.colors.textSecondary }}>{error}</p>
+      <div className="w-full p-6 rounded-lg border-2" style={{ 
+        backgroundColor: '#F0F7FF', 
+        borderColor: theme.colors.primary,
+        color: theme.colors.text 
+      }}>
+        <h3 className="text-lg font-semibold mb-2" style={{ color: theme.colors.primary }}>Erro ao carregar BPMN</h3>
+        <p className="mb-4" style={{ color: theme.colors.textSecondary }}>
+          <span style={{ color: theme.colors.primary }}>BPMN não encontrado:</span> {error}
+        </p>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 text-white rounded transition-colors"
+          className="px-4 py-2 text-white rounded transition-colors font-medium"
           style={{ backgroundColor: theme.colors.primary }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}

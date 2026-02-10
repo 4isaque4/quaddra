@@ -180,87 +180,53 @@ export async function POST(request: Request) {
         });
       }
 
-      // Encontrar todos os arquivos relacionados ao processo
-
+      // Mover APENAS o arquivo BPMN específico, não toda a pasta
       const filesToMove: Array<{ oldPath: string, newPath: string, content: string, sha: string }> = [];
       const filesToDelete: string[] = [];
 
-      // Se o processo está em uma pasta, mover todos os arquivos da pasta (incluindo subpastas)
-      if (processFolderName) {
-        // Buscar todos os arquivos dentro da pasta do processo (incluindo subpastas recursivamente)
-        for (const item of currentTree.tree || []) {
-          // Verificar se o arquivo está dentro da pasta do processo (pode estar em subpastas)
-          if (item.type === 'blob' && item.path && item.path.startsWith(processFolderName + '/')) {
-            const relativePath = item.path.substring(processFolderName.length + 1);
-            
-            // Determinar novo caminho baseado no destino
-            let newItemPath: string;
-            if (targetFolderPath) {
-              // Mover para pasta específica: targetFolderPath/processFolderName/relativePath
-              newItemPath = `${targetFolderPath}/${processFolderName}/${relativePath}`;
-            } else {
-              // Mover para raiz: processFolderName/relativePath
-              newItemPath = `${processFolderName}/${relativePath}`;
-            }
+      // Buscar o arquivo específico que está sendo movido
+      const item = currentTree.tree.find(i => i.path === processPathInGitHub);
+      if (!item || item.type !== 'blob') {
+        return NextResponse.json({ error: 'Arquivo não encontrado no GitHub' }, { status: 404 });
+      }
 
-            // Buscar conteúdo do arquivo
-            try {
-              const { data: fileData } = await octokit.repos.getContent({
-                owner: GITHUB_OWNER,
-                repo: GITHUB_REPO,
-                path: item.path,
-                ref: GITHUB_BRANCH
-              });
+      try {
+        // Buscar conteúdo do arquivo
+        const { data: fileData } = await octokit.repos.getContent({
+          owner: GITHUB_OWNER,
+          repo: GITHUB_REPO,
+          path: processPathInGitHub,
+          ref: GITHUB_BRANCH
+        });
 
-              if ('content' in fileData && fileData.content) {
-                const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-                filesToMove.push({
-                  oldPath: item.path,
-                  newPath: newItemPath,
-                  content,
-                  sha: item.sha!
-                });
-                // Adicionar à lista de arquivos para deletar
-                filesToDelete.push(item.path);
-                console.log('[MOVE] Arquivo marcado para mover:', item.path, '->', newItemPath);
-              }
-            } catch (error: any) {
-              console.warn('[MOVE] Erro ao buscar arquivo do GitHub:', item.path, error.message);
-            }
-          }
+        if ('content' in fileData && fileData.content) {
+          const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+          
+          // Determinar novo caminho: apenas o nome do arquivo na pasta de destino
+          const fileName = processPathInGitHub.split('/').pop() || '';
+          const finalNewPath = targetFolderPath 
+            ? `${targetFolderPath}/${fileName}`  // Pasta destino + nome do arquivo
+            : fileName;  // Apenas nome do arquivo na raiz
+          
+          filesToMove.push({
+            oldPath: processPathInGitHub,
+            newPath: finalNewPath,
+            content,
+            sha: item.sha!
+          });
+          filesToDelete.push(processPathInGitHub);
+          
+          console.log('[MOVE] Arquivo marcado para mover:', processPathInGitHub, '->', finalNewPath);
+          console.log('[MOVE] Movendo apenas o arquivo BPMN, não a pasta inteira');
+        } else {
+          return NextResponse.json({ error: 'Conteúdo do arquivo não encontrado' }, { status: 404 });
         }
-        
-        // Também marcar todas as subpastas (trees) para remoção se necessário
-        // Nota: GitHub remove trees automaticamente quando não há mais arquivos nelas
-        console.log('[MOVE] Total de arquivos a mover:', filesToMove.length);
-        console.log('[MOVE] Total de arquivos a deletar:', filesToDelete.length);
-      } else {
-        // Arquivo na raiz - mover apenas o arquivo
-        const item = currentTree.tree.find(i => i.path === processPathInGitHub);
-        if (item && item.type === 'blob') {
-          try {
-            const { data: fileData } = await octokit.repos.getContent({
-              owner: GITHUB_OWNER,
-              repo: GITHUB_REPO,
-              path: processPathInGitHub,
-              ref: GITHUB_BRANCH
-            });
-
-            if ('content' in fileData && fileData.content) {
-              const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-              filesToMove.push({
-                oldPath: processPathInGitHub,
-                newPath,
-                content,
-                sha: item.sha!
-              });
-              filesToDelete.push(processPathInGitHub);
-            }
-          } catch (error: any) {
-            console.error('[MOVE] Erro ao buscar arquivo do GitHub:', processPathInGitHub, error.message);
-            throw error;
-          }
-        }
+      } catch (error: any) {
+        console.error('[MOVE] Erro ao buscar arquivo do GitHub:', processPathInGitHub, error.message);
+        return NextResponse.json({ 
+          error: 'Erro ao buscar arquivo do GitHub', 
+          details: error.message 
+        }, { status: 500 });
       }
 
       // Criar novos arquivos no GitHub
@@ -293,21 +259,22 @@ export async function POST(request: Request) {
         })
       );
 
-      // Filtrar arquivos antigos (garantir que todos os arquivos da pasta antiga sejam removidos)
+      // Filtrar arquivos antigos (remover apenas o arquivo específico que foi movido)
       const updatedTree = currentTree.tree
         .filter(item => {
-          // Remover arquivos que estão na lista de deletar
+          // Remover apenas o arquivo específico que está sendo movido
           if (item.type === 'blob' && item.path && filesToDelete.includes(item.path)) {
             console.log('[MOVE] Removendo arquivo antigo da árvore:', item.path);
             return false;
           }
-          // Remover trees (pastas) que estão vazias após mover arquivos
-          if (item.type === 'tree' && processFolderName && item.path && item.path.startsWith(processFolderName + '/')) {
-            // Verificar se ainda há arquivos nesta pasta
+          // Remover trees (pastas) que ficaram vazias após mover o arquivo
+          // Verificar se a pasta original do processo ficou vazia
+          if (item.type === 'tree' && processFolderName && item.path === processFolderName) {
+            // Verificar se ainda há arquivos nesta pasta (excluindo o que foi deletado)
             const hasFilesInFolder = currentTree.tree.some(
               otherItem => otherItem.type === 'blob' && 
                           otherItem.path && 
-                          otherItem.path.startsWith(item.path + '/') &&
+                          otherItem.path.startsWith(processFolderName + '/') &&
                           !filesToDelete.includes(otherItem.path)
             );
             if (!hasFilesInFolder) {
@@ -375,20 +342,20 @@ export async function POST(request: Request) {
             const oldLocalPath = join(bpmnDir, fileInfo.oldPath);
             if (existsSync(oldLocalPath)) {
               rmSync(oldLocalPath, { force: true });
+              console.log('[MOVE] Arquivo antigo removido localmente:', oldLocalPath);
             }
-          }
-          
-          // Deletar pasta antiga se estiver vazia
-          if (processFolderName) {
-            const oldFolderPath = join(bpmnDir, processFolderName);
-            if (existsSync(oldFolderPath)) {
+            
+            // Verificar se a pasta antiga ficou vazia e removê-la se necessário
+            const oldFolderPath = dirname(oldLocalPath);
+            if (existsSync(oldFolderPath) && oldFolderPath !== bpmnDir) {
               try {
                 const contents = readdirSync(oldFolderPath);
                 if (contents.length === 0) {
                   rmSync(oldFolderPath, { recursive: true, force: true });
+                  console.log('[MOVE] Pasta vazia removida localmente:', oldFolderPath);
                 }
               } catch (e) {
-                // Ignorar erros ao verificar pasta
+                // Ignorar erros ao verificar/remover pasta
               }
             }
           }
