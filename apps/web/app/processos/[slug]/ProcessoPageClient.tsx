@@ -51,9 +51,9 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
   return (
     <>
       <Header />
-      <main className="pt-20 min-h-screen bg-gray-50">
-        <div className="container py-16">
-          <div className="mb-8">
+      <main className="pt-24 min-h-screen bg-gray-50">
+        <div className="container py-6">
+          <div className="mb-4">
             <Link 
               href={`${basePath}/processos`}
               className="inline-flex items-center font-semibold mb-4 transition-colors"
@@ -66,10 +66,10 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
             
             <div className="flex justify-between items-start">
               <div className="flex-1">
-                <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+                <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
                   {displayName}
                 </h1>
-                <p className="text-xl text-gray-600 mb-4">
+                <p className="text-base text-gray-600 mb-2">
                   Processo localizado em: <span className="font-semibold">{processo.categoria}</span>
                 </p>
                 <div className="text-sm text-gray-500">
@@ -97,10 +97,7 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              Visualização do Processo
-            </h2>
+          <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
             {outros.length > 0 && (
               <div className="mb-4">
                 <DiagramaSelector processoAtual={processo} outrosDiagramas={outros} />
@@ -113,7 +110,7 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
             />
           </div>
 
-          <div className="text-center mt-12">
+          <div className="text-center mt-8">
             <Link 
               href="/"
               className="inline-block bg-gray-600 hover:bg-gray-700 text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300"

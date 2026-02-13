@@ -1,1983 +1,429 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BpmnJS from 'bpmn-js/dist/bpmn-navigated-viewer.development.js';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 import { useTheme } from '@/contexts/ThemeContext';
 
 type BpmnViewerProps = {
-  bpmnUrl: string
-  descriptionsUrl: string
-  contentUrl?: string
+  bpmnUrl: string;
+  descriptionsUrl: string;
+  contentUrl?: string;
+};
+
+type ElementContent = {
+  id: string;
+  nome: string;
+  tipo?: string;
+  ator?: string;
+  entradas?: string[];
+  saidas?: string[];
+  ferramentas?: string[];
+  passoAPasso?: string[];
+  regrasDeNegocio?: string[];
+  popItReferencia?: string[];
+  observacoes?: string[];
+  textoFormatado?: string;
+  textosAssociados?: string[];
+};
+
+const EMPTY_CONTENT = {
+  ator: '',
+  entradas: [],
+  saidas: [],
+  ferramentas: [],
+  passoAPasso: [],
+  regrasDeNegocio: [],
+  popItReferencia: [],
+  observacoes: [],
+  textoFormatado: '',
+  textosAssociados: [],
+};
+
+const arrayFields: Array<keyof ElementContent> = [
+  'entradas',
+  'saidas',
+  'ferramentas',
+  'passoAPasso',
+  'regrasDeNegocio',
+  'popItReferencia',
+  'observacoes',
+  'textosAssociados',
+];
+
+function toText(v: any): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function normalizeArray(v: any): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeElementContent(raw: any, fallback: { id: string; nome: string; tipo?: string }): ElementContent {
+  return {
+    id: raw?.id || fallback.id,
+    nome: raw?.nome || fallback.nome,
+    tipo: raw?.tipo || fallback.tipo,
+    ator: toText(raw?.ator),
+    entradas: normalizeArray(raw?.entradas),
+    saidas: normalizeArray(raw?.saidas),
+    ferramentas: normalizeArray(raw?.ferramentas),
+    passoAPasso: normalizeArray(raw?.passoAPasso),
+    regrasDeNegocio: normalizeArray(raw?.regrasDeNegocio),
+    popItReferencia: normalizeArray(raw?.popItReferencia),
+    observacoes: normalizeArray(raw?.observacoes),
+    textoFormatado: toText(raw?.textoFormatado),
+    textosAssociados: normalizeArray(raw?.textosAssociados),
+  };
 }
 
 export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
   const { theme } = useTheme();
-  const ref = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
   const [viewer, setViewer] = useState<any>(null);
-  const [error, setError] = useState<string>('');
-  const [selected, setSelected] = useState<any>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editedData, setEditedData] = useState<any>(null);
-  const [showModal, setShowModal] = useState<boolean>(false);
-  const [localEdits, setLocalEdits] = useState<Record<string, any>>({});
-  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
-  const [modalDimensions, setModalDimensions] = useState({ width: 1000, height: 700 });
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeDirection, setResizeDirection] = useState<string>('');
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [documentos, setDocumentos] = useState<Array<{ name: string, size: number, path: string }>>([]);
-  const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [docNotificacao, setDocNotificacao] = useState<{ tipo: 'sucesso' | 'erro', msg: string } | null>(null);
-  const [showAnexosPanel, setShowAnexosPanel] = useState(false);
-  const [docToDelete, setDocToDelete] = useState<string | null>(null);
-  const [isPanelMinimized, setIsPanelMinimized] = useState(false);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<ElementContent | null>(null);
+  const [editedData, setEditedData] = useState<ElementContent | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
-  // Extrair slug do processo do bpmnUrl
-  // bpmnUrl pode ser: /api/bpmn/VS_1_ProcessoComercial_Cliente/Comercial%20AS%20IS%20v2.0
-  // ou: /api/bpmn/Comercial%20v2.0 (arquivo na raiz)
-  const bpmnPath = bpmnUrl.replace('/api/bpmn/', '');
-  const pathParts = bpmnPath.split('/');
-  // Se tem mais de 1 parte, a primeira é a pasta do processo
-  const processSlug = pathParts.length > 1 ? pathParts[0] : bpmnPath;
+  const storageKey = useMemo(() => `bpmn_edits_${bpmnUrl}`, [bpmnUrl]);
 
-  // Auto-fechar notificação de documento
-  useEffect(() => {
-    if (docNotificacao) {
-      const timer = setTimeout(() => setDocNotificacao(null), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [docNotificacao]);
-
-  // Carregar documentos do processo
-  const loadDocumentos = async () => {
+  const getLocalEdits = useCallback(() => {
     try {
-      console.log('[BpmnViewer] Carregando documentos para slug:', processSlug);
-      console.log('[BpmnViewer] URL:', `/api/documents/${encodeURIComponent(processSlug)}`);
+      const raw = localStorage.getItem(storageKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, [storageKey]);
 
-      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`);
-      const data = await response.json();
+  const applyBizagiColors = (instance: any) => {
+    try {
+      const elementRegistry = instance.get('elementRegistry');
+      for (const el of elementRegistry.getAll()) {
+        const bo = el.businessObject;
+        const attrs = bo?.di?.$attrs || {};
+        const fill = attrs['bioc:fill'] || attrs['bizagi:fillColor'] || attrs['color:background-color'] || attrs['bi:bgColor'];
+        const stroke = attrs['bioc:stroke'] || attrs['bizagi:strokeColor'] || attrs['color:border-color'] || attrs['bi:borderColor'];
+        if (!fill && !stroke) continue;
+        const gfx = elementRegistry.getGraphics(el.id);
+        const visual = gfx?.querySelector('.djs-visual');
+        if (!visual) continue;
 
-      console.log('[BpmnViewer] Resposta da API:', data);
-
-      if (response.ok) {
-        setDocumentos(data.documents || []);
-        console.log('[BpmnViewer] Documentos carregados:', data.documents?.length || 0);
-      } else {
-        console.warn('[BpmnViewer] Erro na resposta:', data);
+        const targets = visual.querySelectorAll('rect, path, polygon, circle, ellipse');
+        targets.forEach((node: Element) => {
+          const shape = node as SVGElement;
+          if (fill) shape.setAttribute('fill', fill);
+          if (stroke) {
+            shape.setAttribute('stroke', stroke);
+            shape.setAttribute('stroke-width', shape.getAttribute('stroke-width') || '2');
+          }
+        });
       }
     } catch (e) {
-      console.warn('Erro ao carregar documentos:', e);
+      console.warn('[BPMN] Falha ao aplicar cores Bizagi:', e);
     }
   };
 
-  // Fazer upload de documento
-  const handleDocUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploadingDoc(true);
-    setDocNotificacao(null);
-
+  const avoidTextOverlap = (instance: any) => {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      const elementRegistry = instance.get('elementRegistry');
+      for (const el of elementRegistry.getAll()) {
+        if (!/Task$/i.test(el.type || '')) continue;
+        const gfx = elementRegistry.getGraphics(el.id);
+        const label = gfx?.querySelector('text');
+        if (!label) continue;
 
-      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        await loadDocumentos();
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+        const currentX = Number(label.getAttribute('x') || 0);
+        if (currentX < 20) {
+          label.setAttribute('x', String(currentX + 18));
         }
-        setDocNotificacao({
-          tipo: 'sucesso',
-          msg: data.githubSynced
-            ? `"${file.name}" enviado e sincronizado com GitHub!`
-            : `"${file.name}" salvo localmente`
-        });
-      } else {
-        setDocNotificacao({
-          tipo: 'erro',
-          msg: data.error || 'Erro ao enviar documento'
+
+        const iconCandidates = gfx?.querySelectorAll('.djs-visual g path, .djs-visual g rect');
+        iconCandidates?.forEach((n: Element) => {
+          const shape = n as SVGElement;
+          if (shape.closest('.djs-label')) return;
+          shape.setAttribute('opacity', shape.getAttribute('opacity') || '0.8');
         });
       }
     } catch (e) {
-      console.warn('Erro ao fazer upload:', e);
-      setDocNotificacao({
-        tipo: 'erro',
-        msg: 'Erro de conexão ao enviar documento'
-      });
-    } finally {
-      setUploadingDoc(false);
+      console.warn('[BPMN] Falha ao ajustar sobreposição de texto:', e);
     }
   };
 
-  // Confirmar exclusão de documento
-  const confirmDocDelete = (filename: string) => {
-    setDocToDelete(filename);
-  };
-
-  // Cancelar exclusão
-  const cancelDocDelete = () => {
-    setDocToDelete(null);
-  };
-
-  // Deletar documento
-  const handleDocDelete = async () => {
-    if (!docToDelete) return;
-
-    const filename = docToDelete;
-    setDocToDelete(null);
-    setDocNotificacao(null);
-
+  const collectAssociationTexts = (instance: any): Record<string, string[]> => {
+    const map: Record<string, string[]> = {};
     try {
-      const response = await fetch(
-        `/api/documents/${encodeURIComponent(processSlug)}?filename=${encodeURIComponent(filename)}`,
-        { method: 'DELETE' }
-      );
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        await loadDocumentos();
-        setDocNotificacao({
-          tipo: 'sucesso',
-          msg: data.githubSynced
-            ? `"${filename}" removido e sincronizado com GitHub!`
-            : `"${filename}" removido localmente`
-        });
-      } else {
-        setDocNotificacao({
-          tipo: 'erro',
-          msg: data.error || 'Erro ao remover documento'
-        });
+      const elementRegistry = instance.get('elementRegistry');
+      for (const el of elementRegistry.getAll()) {
+        const bo = el.businessObject;
+        if (el.type !== 'bpmn:Association') continue;
+        const targetId = bo?.targetRef?.id;
+        const sourceText = bo?.sourceRef?.text || bo?.sourceRef?.businessObject?.text || bo?.sourceRef?.name;
+        const text = typeof sourceText === 'string' ? sourceText.trim() : '';
+        if (!targetId || !text) continue;
+        map[targetId] = [...(map[targetId] || []), text];
       }
     } catch (e) {
-      console.warn('Erro ao deletar documento:', e);
-      setDocNotificacao({
-        tipo: 'erro',
-        msg: 'Erro de conexão ao remover documento'
-      });
+      console.warn('[BPMN] Falha ao coletar textos de associação:', e);
     }
+    return map;
   };
 
-  // Carregar documentos quando o componente montar
   useEffect(() => {
-    loadDocumentos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!canvasRef.current) return;
 
-  // Recarregar documentos quando o modal abrir
-  useEffect(() => {
-    if (showModal) {
-      loadDocumentos();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showModal]);
-
-  // Debug: Log quando showModal muda
-  useEffect(() => {
-    // console.log('[Modal] showModal alterado para:', showModal);
-  }, [showModal]);
-
-  useEffect(() => {
-    if (!ref.current) return;
-
-    let overlays: any, eventBus: any, canvas: any, elementRegistry: any;
-    let active: Record<string, any> = {};
     let currentViewer: any = null;
-    let selectionMarker: string | null = null;
-    let cursorStyleEl: HTMLStyleElement | null = null;
+    let isAlive = true;
 
-    function escapeHtml(s: any) {
-      return String(s ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[m]);
-    }
-
-    async function load() {
+    const load = async () => {
       try {
-        // Verificar se o componente ainda está montado
-        if (!ref.current) {
-          return;
-        }
-
         setError('');
 
-        const xmlResp = await fetch(bpmnUrl);
-        const descResp = await fetch(descriptionsUrl);
+        const [xmlResp, descResp, contentResp] = await Promise.all([
+          fetch(bpmnUrl),
+          fetch(descriptionsUrl),
+          contentUrl ? fetch(contentUrl).catch(() => null) : Promise.resolve(null),
+        ]);
 
-        // Buscar content de forma silenciosa (sem mostrar erro 404)
-        let contentResp = null;
-        if (contentUrl) {
-          try {
-            contentResp = await fetch(contentUrl);
-            if (!contentResp.ok) {
-              contentResp = null; // Silenciar erro 404
-            }
-          } catch (e) {
-            contentResp = null; // Silenciar qualquer erro de rede
-          }
-        }
-
-        if (!xmlResp.ok) {
-          throw new Error('BPMN não encontrado: ' + bpmnUrl);
-        }
+        if (!xmlResp.ok) throw new Error(`BPMN não encontrado: ${bpmnUrl}`);
 
         const xml = await xmlResp.text();
-        const desc = descResp.ok ? await descResp.json() : {};
+        const descriptions = descResp.ok ? await descResp.json() : {};
+        const content = contentResp && contentResp.ok ? await contentResp.json() : {};
 
-        // Tratar content como opcional - se não existir, usar objeto vazio
-        let content: any = {};
-        if (contentResp && contentResp.ok) {
-          try {
-            content = await contentResp.json();
-          } catch (e) {
-            console.warn('Content não disponível ou inválido, usando dados vazios');
-          }
-        }
+        if (!isAlive || !canvasRef.current) return;
 
-        // Verificar se o XML é válido
-        if (!xml.includes('<definitions') || !xml.includes('</definitions>')) {
-          throw new Error('XML BPMN inválido - não contém definições');
-        }
+        currentViewer = new (BpmnJS as any)({ container: canvasRef.current });
+        setViewer(currentViewer);
 
-        // 3. Criar o viewer
-        if (ref.current) {
-          currentViewer = new (BpmnJS as any)({
-            container: ref.current,
-            textRenderer: {
-              defaultStyle: {
-                fontSize: 10,
-                lineHeight: 1.1
-              },
-              externalStyle: {
-                fontSize: 9,
-                lineHeight: 1.1
-              }
-            }
-          });
+        await currentViewer.importXML(xml);
 
-          setViewer(currentViewer);
-        } else {
-          throw new Error('Container não disponível');
-        }
+        const canvas = currentViewer.get('canvas');
+        canvas.zoom('fit-viewport');
 
-        if (currentViewer) {
-          // Verificar novamente se o componente ainda está montado
-          if (!ref.current) {
-            return;
-          }
+        applyBizagiColors(currentViewer);
+        avoidTextOverlap(currentViewer);
 
-          // Importar XML e silenciar warnings de DataObject (problema do Bizagi)
-          try {
-            const result = await currentViewer.importXML(xml);
-            if (result.warnings && result.warnings.length > 0) {
-              // Filtrar apenas warnings críticos (não os de DataObject)
-              const criticalWarnings = result.warnings.filter((w: any) =>
-                !w.message?.includes('DataObject') &&
-                !w.message?.includes('not yet drawn')
-              );
-              if (criticalWarnings.length > 0) {
-                console.warn('[BPMN] Avisos ao importar:', criticalWarnings);
-              }
-            }
-          } catch (importError: any) {
-            // Ignorar erros de DataObject que não impedem renderização
-            if (!importError.message?.includes('DataObject') &&
-              !importError.message?.includes('not yet drawn')) {
-              throw importError;
-            }
-            console.warn('[BPMN] Aviso ignorado (DataObject):', importError.message);
-          }
-          try {
-            const canvas = currentViewer.get('canvas');
-            if (canvas && canvas.zoom) {
-              canvas.zoom('fit-viewport');
-            }
-          } catch (zoomError) {
-            console.warn('Erro ao ajustar zoom inicial:', zoomError);
-          }
+        const flat = descriptions?.elements || descriptions?.processes?.[Object.keys(descriptions?.processes || {})[0]]?.elements || {};
+        const contentById = content?.elements || {};
+        const associationTexts = collectAssociationTexts(currentViewer);
+        const eventBus = currentViewer.get('eventBus');
 
-          overlays = currentViewer.get('overlays');
-          eventBus = currentViewer.get('eventBus');
-          canvas = currentViewer.get('canvas');
-          elementRegistry = currentViewer.get('elementRegistry');
+        eventBus.on('element.dblclick', 100, (e: any) => {
+          const id = e.element?.id;
+          if (!id) return;
+          const bo = e.element.businessObject;
 
-          // Interceptar erros de importação relacionados a DataObject (silenciar no console)
-          if (typeof window !== 'undefined' && !(window as any).__originalConsoleError) {
-            (window as any).__originalConsoleError = console.error;
-          }
-          const originalConsoleError = (window as any).__originalConsoleError || console.error;
-          const silencedErrors = ['DataObject', 'not yet drawn', 'Association'];
-          (console as any).error = function (...args: any[]) {
-            const message = args.join(' ');
-            const shouldSilence = silencedErrors.some(keyword =>
-              message.includes(keyword) && message.includes('failed to import')
-            );
-            if (!shouldSilence) {
-              originalConsoleError.apply(console, args);
-            }
+          const fallback = {
+            id,
+            nome: flat?.[id]?.name || bo?.name || id,
+            tipo: e.element.type,
           };
 
-          // Função para limitar linhas de texto nos labels
-          const clampLabelText = () => {
-            if (!canvas || !elementRegistry) return;
+          const fromContent = normalizeElementContent(contentById[id], fallback);
+          const fromLocal = normalizeElementContent(getLocalEdits()[id], fallback);
 
-            elementRegistry.getAll().forEach((el: any) => {
-              const gfx = canvas.getGraphics(el);
-              if (!gfx) return;
+          const merged = normalizeElementContent(
+            {
+              ...EMPTY_CONTENT,
+              ...fromContent,
+              ...fromLocal,
+              textosAssociados: [...(fromLocal.textosAssociados || fromContent.textosAssociados || []), ...(associationTexts[id] || [])],
+              textoFormatado: fromLocal.textoFormatado || fromContent.textoFormatado || bo?.documentation?.[0]?.text || '',
+            },
+            fallback,
+          );
 
-              const textEl = gfx.querySelector('text.djs-label');
-              if (!textEl) return;
-
-              const maxLines = el.type === 'bpmn:TextAnnotation' ? 5 : 3;
-              const tspans = Array.from(textEl.querySelectorAll('tspan'));
-
-              if (tspans.length <= maxLines) return;
-
-              tspans.slice(maxLines).forEach((tspan: any) => tspan.remove());
-              const lastLine = tspans[maxLines - 1] as Element;
-
-              if (lastLine) {
-                const original = lastLine.textContent || '';
-                const trimmed = original.replace(/…$/, '').trim();
-                lastLine.textContent = trimmed ? `${trimmed}…` : '…';
-              }
-            });
-          };
-
-          // Função auxiliar para criar cor mais clara (para fundo)
-          const lightenColor = (hex: string, percent: number) => {
-            const num = parseInt(hex.replace('#', ''), 16);
-            const r = (num >> 16) & 0xff;
-            const g = (num >> 8) & 0xff;
-            const b = num & 0xff;
-            const newR = Math.min(255, Math.round(r + (255 - r) * percent));
-            const newG = Math.min(255, Math.round(g + (255 - g) * percent));
-            const newB = Math.min(255, Math.round(b + (255 - b) * percent));
-            return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
-          };
-
-          // Função auxiliar para criar cor mais escura (para texto)
-          const darkenColor = (hex: string, percent: number) => {
-            const num = parseInt(hex.replace('#', ''), 16);
-            const r = (num >> 16) & 0xff;
-            const g = (num >> 8) & 0xff;
-            const b = num & 0xff;
-            const newR = Math.max(0, Math.round(r * (1 - percent)));
-            const newG = Math.max(0, Math.round(g * (1 - percent)));
-            const newB = Math.max(0, Math.round(b * (1 - percent)));
-            return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
-          };
-
-          // Obter cores do tema
-          const primaryColor = theme.colors.primary; // #0367A6 para ValeShop
-          const primaryLight = lightenColor(primaryColor, 0.9); // Azul muito claro para fundo (~90% mais claro)
-          const primaryDark = darkenColor(primaryColor, 0.4); // Azul escuro para texto (~40% mais escuro)
-
-          // estilo de cursor/hover/seleção
-          cursorStyleEl = document.createElement('style');
-          cursorStyleEl.innerHTML = `
-            /* Normalizar todas as bordas para espessura padrão e aplicar cor do tema */
-            /* IMPORTANTE: Não aplicar em conexões - apenas em elementos de forma */
-            .djs-element:not(.djs-connection) .djs-visual > :first-child {
-              stroke-width: 2px !important;
-              stroke: ${primaryColor} !important; /* Bordas usam cor do tema */
-            }
-            
-            /* Conexões/setas - apenas stroke, SEM fill para evitar triângulos sólidos */
-            .djs-connection .djs-visual > :first-child,
-            .djs-connection .djs-visual path {
-              stroke: ${primaryColor} !important;
-              stroke-width: 2px !important;
-              fill: none !important; /* CRÍTICO: Sem fill para evitar formas sólidas */
-              fill-opacity: 0 !important;
-            }
-            
-            /* Garantir que TODOS os elementos dentro de conexões não tenham fill, exceto marcadores */
-            .djs-connection .djs-visual > * {
-              fill: none !important;
-              fill-opacity: 0 !important;
-            }
-            
-            /* Marcadores de setas (pontas) - apenas o último elemento pode ter fill se não for path */
-            .djs-connection .djs-visual > :last-child:not(path) {
-              fill: ${primaryColor} !important;
-              stroke: ${primaryColor} !important;
-              stroke-width: 1px !important;
-            }
-            
-            /* Garantir que paths de conexão nunca tenham fill */
-            .djs-connection .djs-visual path {
-              fill: none !important;
-              fill-opacity: 0 !important;
-              stroke: ${primaryColor} !important;
-            }
-            
-            /* Texto padrão dos elementos usa cor escura do tema (não conexões) */
-            .djs-element:not(.djs-connection) .djs-visual text:not(.bpmn-selected text) {
-              fill: ${primaryDark} !important;
-            }
-            
-            /* Labels padrão usam cor escura do tema */
-            .djs-label text {
-              fill: ${primaryDark} !important;
-            }
-            
-            /* Hover state - usar cor primária mais clara */
-            .djs-element.djs-hover .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-              stroke-width: 2.5px !important;
-              filter: brightness(1.1);
-            }
-            
-            .djs-element:not(.djs-connection) .djs-hit {
-              cursor: pointer !important;
-              stroke: transparent;
-              stroke-width: 100px;
-              fill: transparent;
-              fill-opacity: 0;
-              pointer-events: all !important;
-            }
-            .djs-element.djs-hover .djs-visual > * { filter: brightness(1.05); }
-            
-            /* Seleção com fundo e borda usando cor do tema */
-            .bpmn-selected .djs-visual > :first-child { 
-              stroke: ${primaryColor} !important;
-              stroke-width: 3px !important;
-              fill: ${primaryLight} !important; /* tom claro da cor primária */
-            }
-            
-            /* Texto mais escuro quando selecionado (sem negrito) */
-            .bpmn-selected .djs-visual > text {
-              fill: ${primaryDark} !important; /* cor escura para contraste */
-              stroke: none !important;
-              font-weight: normal !important;
-            }
-            
-            .bpmn-selected .djs-visual > .djs-label {
-              fill: ${primaryDark} !important;
-              font-weight: normal !important;
-            }
-            
-            .bpmn-selected .djs-visual > [class*="bpmn-icon"] { 
-              stroke: none !important;
-              filter: none !important;
-              fill: ${primaryDark} !important; /* ícones também na cor escura */
-            }
-            
-            /* Ajustar texto em tarefas para não sobrepor ícones */
-            .djs-element .djs-visual text {
-              font-size: 10px !important;
-              font-weight: 400 !important;
-            }
-            /* Forçar peso normal em todo texto/label/tspan, inclusive herdados do Bizagi */
-            .djs-element .djs-label,
-            .djs-element .djs-label text,
-            .djs-element .djs-label tspan,
-            .djs-element .djs-visual text,
-            .djs-element .djs-visual tspan,
-            .djs-element text,
-            .djs-element tspan,
-            .djs-element text[font-weight],
-            .djs-element tspan[font-weight],
-            .djs-element text[style*="font-weight"],
-            .djs-element tspan[style*="font-weight"] {
-              font-weight: 400 !important;
-              font-family: inherit !important;
-              font-stretch: normal !important;
-              font-style: normal !important;
-              font-variation-settings: "wght" 400 !important;
-              stroke: none !important;
-            }
-            
-            /* Deslocar texto para baixo em tarefas com ícones para dar espaço */
-            .djs-element[class*="userTask"] .djs-visual text,
-            .djs-element[class*="manualTask"] .djs-visual text,
-            .djs-element[class*="scriptTask"] .djs-visual text,
-            .djs-element[class*="serviceTask"] .djs-visual text,
-            .djs-element[class*="businessRuleTask"] .djs-visual text,
-            .djs-element[class*="sendTask"] .djs-visual text,
-            .djs-element[class*="receiveTask"] .djs-visual text {
-              transform: translate(0, 10px);
-            }
-            
-            .tooltip {
-              background: rgba(255,255,255,0.95);
-              border: 2px solid ${primaryColor};
-              border-radius: 6px;
-              padding: 8px 12px;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-              max-width: 300px;
-              pointer-events: none;
-              z-index: 1000;
-            }
-            .tooltip .title {
-              font-weight: 500;
-              color: ${primaryColor};
-              font-size: 14px;
-              margin-bottom: 4px;
-            }
-            .tooltip .meta {
-              font-size: 11px;
-              color: #666;
-              margin-bottom: 4px;
-            }
-            .tooltip div:last-child {
-              font-size: 12px;
-              color: #333;
-            }
-            
-            /* Anotações de texto - reduzir drasticamente */
-            .djs-element[class*="TextAnnotation"] .djs-visual text,
-            .djs-element[class*="TextAnnotation"] .djs-label text {
-              font-size: 8px !important;
-              font-weight: 400 !important;
-            }
-            
-            .djs-element[class*="TextAnnotation"] {
-              max-width: 180px !important;
-            }
-            
-            .djs-element[class*="TextAnnotation"] .djs-label {
-              max-width: 180px !important;
-            }
-            
-            /* Controlar tamanho de todos os labels */
-            .djs-label {
-              max-width: 250px !important;
-            }
-            
-            .djs-label text {
-              font-size: 10px !important;
-            }
-            
-            /* Remover overlays de hover completamente */
-            .djs-overlay-context {
-              display: none !important;
-            }
-            
-            /* Overlays permanentes (data stores) - menor z-index */
-            .djs-overlay {
-              pointer-events: none !important;
-              z-index: 1 !important;
-            }
-            
-            /* Remover watermark bpmn.io */
-            .bjs-powered-by {
-              display: none !important;
-            }
-            
-            /* Gateways (losangos) - borda e preenchimento */
-            .djs-element[class*="Gateway"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-              fill: white !important;
-            }
-            
-            /* Eventos (círculos) - borda */
-            .djs-element[class*="Event"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-            }
-            
-            /* Tarefas (retângulos) - borda */
-            .djs-element[class*="Task"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-              fill: white !important;
-            }
-            
-            /* Pools e Lanes - borda */
-            .djs-element[class*="Participant"] .djs-visual > :first-child,
-            .djs-element[class*="Lane"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-            }
-            
-            /* Data Objects e Data Stores - borda */
-            .djs-element[class*="DataObject"] .djs-visual > :first-child,
-            .djs-element[class*="DataStore"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-            }
-            
-            /* Anotações - borda */
-            .djs-element[class*="TextAnnotation"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-            }
-            
-            /* Grupos - borda tracejada */
-            .djs-element[class*="Group"] .djs-visual > :first-child {
-              stroke: ${primaryColor} !important;
-              stroke-dasharray: 5,5 !important;
-            }
-            
-            /* Ícones BPMN - usar cor do tema */
-            .djs-element .djs-visual [class*="bpmn-icon"] {
-              fill: ${primaryColor} !important;
-              stroke: ${primaryColor} !important;
-            }
-          `;
-          document.head.appendChild(cursorStyleEl);
-          requestAnimationFrame(() => clampLabelText());
-
-          const flat: any = Array.isArray(desc) ? {} : (desc.elements ? desc.elements : (() => {
-            const map: any = {};
-            if (desc.processes) {
-              Object.values<any>(desc.processes as any).forEach(p => {
-                Object.values<any>((p as any).elements || {}).forEach((el: any) => { map[el.id] = el; });
-              });
-            } else if (desc && typeof desc === 'object') {
-              Object.assign(map, desc);
-            }
-            return map;
-          })());
-          const contentById: Record<string, any> = (() => {
-            if (content && content.elements) return content.elements;
-            return {};
-          })();
-
-          // DESABILITADO: Tooltips ao passar o mouse causam sobreposição
-          // eventBus.on('element.hover', 100, function(e: any) {
-          //   const id = e.element.id;
-          //   const info = flat[id];
-          //   if (info && (info.description || info.name)) {
-          //     const html = document.createElement('div');
-          //     html.className = 'tooltip';
-          //     html.style.pointerEvents = 'none';
-          //     html.style.zIndex = '1000';
-          //     html.innerHTML = `<div class="title">${escapeHtml(info.name || id)}</div>
-          //       <div class="meta">${escapeHtml(info.file || '')}${info.processName ? ' • ' + escapeHtml(info.processName) : ''}</div>
-          //       <div>${escapeHtml(info.description || '')}</div>`;
-          //     if (active[id]) overlays.remove(active[id]);
-          //     active[id] = overlays.add(id, { position: { top: -5, left: 0 }, html });
-          //   }
-          // });
-
-          let clickCount = 0;
-          let clickTimer: any = null;
-
-          eventBus.on('element.click', 100, function (e: any) {
-            const id = e.element.id;
-            const element = e.element;
-            clickCount++;
-
-            if (clickCount === 1) {
-              clickTimer = setTimeout(() => {
-                // Clique único
-                const details = contentById[id];
-                const fallback = flat[id];
-                const businessObject = element.businessObject;
-
-                // Sempre cria um objeto, mesmo que vazio
-                const merged = details
-                  ? { id, ...details }
-                  : (fallback ? {
-                    id,
-                    nome: fallback.name || id,
-                    observacoes: fallback.description ? [fallback.description] : [],
-                    arquivo: fallback.file,
-                    processo: fallback.processName
-                  } : {
-                    id,
-                    nome: businessObject?.name || element.type || id,
-                    tipo: element.type,
-                    ator: '',
-                    entradas: [],
-                    saidas: [],
-                    ferramentas: [],
-                    passoAPasso: [],
-                    popItReferencia: [],
-                    observacoes: []
-                  });
-
-                // Aplicar edições locais se existirem (ler direto do localStorage)
-                let finalData = merged;
-                try {
-                  const storageKey = `bpmn_edits_${bpmnUrl}`;
-                  const stored = localStorage.getItem(storageKey);
-                  if (stored) {
-                    const edits = JSON.parse(stored);
-                    if (edits[id]) {
-                      finalData = { ...merged, ...edits[id] };
-                    }
-                  }
-                } catch (e) {
-                  console.warn('Erro ao carregar edições do localStorage:', e);
-                }
-
-                setSelected(finalData);
-                setSelectedId(id);
-                setIsEditing(false);
-                setShowModal(false);
-
-                try {
-                  if (selectionMarker) {
-                    canvas.removeMarker(selectionMarker, 'bpmn-selected');
-                  }
-                  canvas.addMarker(id, 'bpmn-selected');
-                  selectionMarker = id;
-                } catch (selErr) {
-                  console.warn('Falha ao aplicar marcador de seleção', selErr);
-                }
-
-                clickCount = 0;
-              }, 250);
-            } else if (clickCount === 2) {
-              // Duplo clique - abrir modal
-              clearTimeout(clickTimer);
-              const details = contentById[id];
-              const fallback = flat[id];
-              const businessObject = element.businessObject;
-
-              // Sempre cria um objeto, mesmo que vazio
-              const merged = details
-                ? { id, ...details }
-                : (fallback ? {
-                  id,
-                  nome: fallback.name || id,
-                  observacoes: fallback.description ? [fallback.description] : [],
-                  arquivo: fallback.file,
-                  processo: fallback.processName
-                } : {
-                  id,
-                  nome: businessObject?.name || element.type || id,
-                  tipo: element.type,
-                  ator: '',
-                  entradas: [],
-                  saidas: [],
-                  ferramentas: [],
-                  passoAPasso: [],
-                  popItReferencia: [],
-                  observacoes: []
-                });
-
-              // Aplicar edições locais se existirem (ler direto do localStorage)
-              let finalData = merged;
-              try {
-                const storageKey = `bpmn_edits_${bpmnUrl}`;
-                const stored = localStorage.getItem(storageKey);
-                if (stored) {
-                  const edits = JSON.parse(stored);
-                  if (edits[id]) {
-                    finalData = { ...merged, ...edits[id] };
-                  }
-                }
-              } catch (e) {
-                console.warn('Erro ao carregar edições do localStorage:', e);
-              }
-
-              setSelected(finalData);
-              setSelectedId(id);
-              setShowModal(true);
-              setModalDimensions({ width: 800, height: 600 });
-              // Centralizar na tela
-              setModalPosition({
-                x: (window.innerWidth - 800) / 2,
-                y: (window.innerHeight - 600) / 2
-              });
-              clickCount = 0;
-            }
-          });
-
-          // rótulos de data store (usa nome do dataStoreRef ou próprio nome)
-          elementRegistry.getAll().forEach((el: any) => {
-            if (el.type === 'bpmn:DataStoreReference') {
-              const bo = el.businessObject || {};
-              const refName = bo.dataStoreRef?.name || bo.name || flat[el.id]?.name;
-              if (refName) {
-                try {
-                  overlays.add(el, {
-                    position: { bottom: -28, left: 0 },
-                    html: `<span style="background:rgba(255,255,255,0.95);border:1px solid ${primaryColor};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:500;color:${primaryDark};pointer-events:none;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.12);z-index:100;display:block;text-align:center;">${escapeHtml(refName)}</span>`
-                  });
-                } catch (ovErr) {
-                  console.warn('Falha ao adicionar label de data store', el.id, ovErr);
-                }
-              }
-            }
-          });
-
-          eventBus.on('element.out', 100, function (e: any) {
-            const id = e.element.id;
-            if (active[id]) { overlays.remove(active[id]); delete active[id]; }
-          });
-
-          // Verificar se o diagrama está visível após um pequeno delay
-          setTimeout(() => {
-            if (ref.current && currentViewer) {
-              const canvas = currentViewer.get('canvas');
-              const elementRegistry = currentViewer.get('elementRegistry');
-              const elements = elementRegistry.getAll();
-
-              // Se não há elementos visíveis, mostrar mensagem
-              if (elements.length === 0) {
-                if (ref.current) {
-                  ref.current.innerHTML = `
-                    <div style="padding:20px;text-align:center;color:#666;">
-                      <h3>Diagrama BPMN</h3>
-                      <p>XML carregado com sucesso (${xml.length} caracteres)</p>
-                      <p>Mas nenhum elemento visual foi encontrado.</p>
-                      <p>Verifique se o XML contém elementos de processo válidos.</p>
-                    </div>
-                  `;
-                }
-              }
-            }
-          }, 1000);
-        }
-
-      } catch (err) {
-        console.error('Erro detalhado ao carregar BPMN:', err);
-        setError(err instanceof Error ? err.message : 'Erro desconhecido');
-
-        if (ref.current) {
-          // Fallback: mostrar o XML como texto
-          try {
-            const xmlResponse = await fetch(bpmnUrl);
-            if (xmlResponse.ok && ref.current) {
-              const xmlText = await xmlResponse.text();
-              const primaryColor = theme?.colors?.primary || '#0367A6';
-              const textColor = theme?.colors?.text || '#1a1a1a';
-              const textSecondaryColor = theme?.colors?.textSecondary || '#666';
-              ref.current.innerHTML = `
-                <div style="padding:20px;background-color:#F0F7FF;border:2px solid ${primaryColor};border-radius:8px;text-align:center;">
-                  <h3 style="color:${primaryColor};font-size:18px;font-weight:600;margin-bottom:12px;">Erro ao renderizar BPMN</h3>
-                  <p style="color:${textColor};margin-bottom:8px;">${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
-                  <details style="margin-top:10px;text-align:left;max-width:800px;margin:10px auto;">
-                    <summary style="color:${primaryColor};cursor:pointer;">Detalhes técnicos</summary>
-                    <p style="color:${textSecondaryColor};font-size:14px;margin-top:8px;"><strong>URL BPMN:</strong> ${bpmnUrl}</p>
-                    <p style="color:${textSecondaryColor};font-size:14px;"><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
-                    <p style="color:${textSecondaryColor};font-size:14px;"><strong>Erro:</strong> ${err instanceof Error ? err.message : 'N/A'}</p>
-                    <div style="margin-top:15px;padding:10px;background:#ffffff;border:1px solid ${primaryColor};border-radius:4px;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;text-align:left;">
-                      <strong style="color:${primaryColor};">XML BPMN (primeiros 1000 caracteres):</strong><br/>
-                      <span style="color:${textSecondaryColor};">${xmlText.substring(0, 1000)}...</span>
-                    </div>
-                  </details>
-                </div>
-              `;
-            } else {
-              throw new Error('Não foi possível carregar o XML para fallback');
-            }
-          } catch (fallbackError) {
-            if (ref.current) {
-              const primaryColor = theme?.colors?.primary || '#0367A6';
-              const textColor = theme?.colors?.text || '#1a1a1a';
-              const textSecondaryColor = theme?.colors?.textSecondary || '#666';
-              ref.current.innerHTML = `<div style="padding:20px;background-color:#F0F7FF;border:2px solid ${primaryColor};border-radius:8px;text-align:center;">
-                <h3 style="color:${primaryColor};font-size:18px;font-weight:600;margin-bottom:12px;">Erro ao carregar BPMN</h3>
-                <p style="color:${textColor};margin-bottom:8px;">${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
-                <p style="color:${textSecondaryColor};font-size:14px;"><strong>Erro no fallback:</strong> ${fallbackError instanceof Error ? fallbackError.message : 'N/A'}</p>
-                <details style="margin-top:10px;text-align:left;max-width:500px;margin:10px auto;">
-                  <summary style="color:${primaryColor};cursor:pointer;">Detalhes técnicos</summary>
-                  <p style="color:${textSecondaryColor};font-size:12px;margin-top:8px;"><strong>URL BPMN:</strong> ${bpmnUrl}</p>
-                  <p style="color:${textSecondaryColor};font-size:12px;"><strong>URL Descrições:</strong> ${descriptionsUrl}</p>
-                  <p style="color:${textSecondaryColor};font-size:12px;"><strong>Erro:</strong> ${err instanceof Error ? err.stack : 'N/A'}</p>
-                </details>
-              </div>`;
-            }
-          }
-        }
+          setSelected(merged);
+          setEditedData(merged);
+          setIsEditing(false);
+          setShowModal(true);
+        });
+      } catch (e: any) {
+        setError(e?.message || 'Erro ao carregar diagrama');
       }
-    }
+    };
 
     load();
 
     return () => {
-      try {
-        if (currentViewer) {
-          currentViewer.destroy();
-        }
-      } catch (e) {
-        console.error('Erro ao destruir viewer:', e);
-      }
-
-      // Restaurar console.error original ao desmontar
-      if (typeof window !== 'undefined' && (window as any).__originalConsoleError) {
-        console.error = (window as any).__originalConsoleError;
-      }
-    };
-  }, [bpmnUrl, descriptionsUrl, contentUrl, theme]);
-
-  // Funcoes de edicao
-  const handleStartEdit = () => {
-    // Garantir que todos os campos de array existam
-    const initialData = selected ? {
-      ...selected,
-      entradas: selected.entradas || [],
-      saidas: selected.saidas || [],
-      ferramentas: selected.ferramentas || [],
-      passoAPasso: selected.passoAPasso || [],
-      popItReferencia: selected.popItReferencia || [],
-      observacoes: selected.observacoes || []
-    } : {
-      entradas: [],
-      saidas: [],
-      ferramentas: [],
-      passoAPasso: [],
-      popItReferencia: [],
-      observacoes: []
-    };
-    setEditedData(initialData);
-    setIsEditing(true);
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedData(null);
-  };
-
-  const handleSaveEdit = () => {
-
-    if (selectedId && editedData) {
-      setLocalEdits((prev: any) => {
-        const newEdits = { ...prev, [selectedId]: editedData };
-
-        // Salvar no localStorage com o valor mais recente
+      isAlive = false;
+      if (currentViewer) {
         try {
-          const storageKey = `bpmn_edits_${bpmnUrl}`;
-          localStorage.setItem(storageKey, JSON.stringify(newEdits));
-        } catch (e) {
-          console.error('[Storage] Erro ao salvar edições no localStorage:', e);
+          currentViewer.destroy();
+        } catch {
+          // noop
         }
+      }
+    };
+  }, [bpmnUrl, descriptionsUrl, contentUrl, getLocalEdits]);
 
-        return newEdits;
-      });
-
+  const saveEdits = () => {
+    if (!editedData) return;
+    try {
+      const edits = getLocalEdits();
+      edits[editedData.id] = editedData;
+      localStorage.setItem(storageKey, JSON.stringify(edits));
       setSelected(editedData);
       setIsEditing(false);
-      setEditedData(null);
+    } catch {
+      setError('Falha ao salvar alterações locais.');
     }
   };
 
-  const handleFieldChange = (field: string, value: any) => {
-    setEditedData((prev: any) => ({ ...prev, [field]: value }));
-  };
-
-  const handleArrayFieldChange = (field: string, index: number, value: string) => {
-    setEditedData((prev: any) => {
-      const array = [...(prev[field] || [])];
-      array[index] = value;
-      return { ...prev, [field]: array };
+  const updateArrayItem = (field: keyof ElementContent, idx: number, value: string) => {
+    setEditedData((prev) => {
+      if (!prev) return prev;
+      const arr = [...normalizeArray((prev as any)[field])];
+      arr[idx] = value;
+      return { ...prev, [field]: arr } as ElementContent;
     });
   };
 
-  const handleArrayFieldAdd = (field: string) => {
-    setEditedData((prev: any) => ({
-      ...prev,
-      [field]: [...(prev[field] || []), '']
-    }));
-  };
-
-  const handleArrayFieldRemove = (field: string, index: number) => {
-    setEditedData((prev: any) => {
-      const array = [...(prev[field] || [])];
-      array.splice(index, 1);
-      return { ...prev, [field]: array };
+  const addArrayItem = (field: keyof ElementContent) => {
+    setEditedData((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [field]: [...normalizeArray((prev as any)[field]), ''] } as ElementContent;
     });
   };
 
-  // Carregar edições do localStorage ao montar
-  React.useEffect(() => {
-    try {
-      const storageKey = `bpmn_edits_${bpmnUrl}`;
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        setLocalEdits(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar edições do localStorage:', e);
-    }
-  }, [bpmnUrl]);
-
-  // Listener global para parar arrastar/redimensionar quando soltar o mouse
-  React.useEffect(() => {
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      setIsDragging(false);
-      setResizeDirection('');
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizing) {
-        const deltaX = e.clientX - resizeStart.x;
-        const deltaY = e.clientY - resizeStart.y;
-
-        let newWidth = resizeStart.width;
-        let newHeight = resizeStart.height;
-        let newX = resizeStart.posX;
-        let newY = resizeStart.posY;
-
-        // Redimensionar baseado na direção
-        switch (resizeDirection) {
-          case 'e': // Direita
-            newWidth = Math.max(400, resizeStart.width + deltaX);
-            break;
-          case 'w': // Esquerda
-            newWidth = Math.max(400, resizeStart.width - deltaX);
-            newX = resizeStart.posX + (resizeStart.width - newWidth);
-            break;
-          case 's': // Baixo
-            newHeight = Math.max(300, resizeStart.height + deltaY);
-            break;
-          case 'n': // Cima
-            newHeight = Math.max(300, resizeStart.height - deltaY);
-            newY = resizeStart.posY + (resizeStart.height - newHeight);
-            break;
-          case 'se': // Sudeste
-            newWidth = Math.max(400, resizeStart.width + deltaX);
-            newHeight = Math.max(300, resizeStart.height + deltaY);
-            break;
-          case 'sw': // Sudoeste
-            newWidth = Math.max(400, resizeStart.width - deltaX);
-            newHeight = Math.max(300, resizeStart.height + deltaY);
-            newX = resizeStart.posX + (resizeStart.width - newWidth);
-            break;
-          case 'ne': // Nordeste
-            newWidth = Math.max(400, resizeStart.width + deltaX);
-            newHeight = Math.max(300, resizeStart.height - deltaY);
-            newY = resizeStart.posY + (resizeStart.height - newHeight);
-            break;
-          case 'nw': // Noroeste
-            newWidth = Math.max(400, resizeStart.width - deltaX);
-            newHeight = Math.max(300, resizeStart.height - deltaY);
-            newX = resizeStart.posX + (resizeStart.width - newWidth);
-            newY = resizeStart.posY + (resizeStart.height - newHeight);
-            break;
-        }
-
-        // Limitar ao viewport
-        if (newWidth > window.innerWidth - 20) newWidth = window.innerWidth - 20;
-        if (newHeight > window.innerHeight - 20) newHeight = window.innerHeight - 20;
-        if (newX < 0) { newWidth += newX; newX = 0; }
-        if (newY < 0) { newHeight += newY; newY = 0; }
-
-        setModalDimensions({ width: newWidth, height: newHeight });
-        setModalPosition({ x: newX, y: newY });
-      } else if (isDragging) {
-        const newX = Math.max(0, Math.min(window.innerWidth - modalDimensions.width, e.clientX - dragStart.x));
-        const newY = Math.max(0, Math.min(window.innerHeight - modalDimensions.height, e.clientY - dragStart.y));
-        setModalPosition({ x: newX, y: newY });
-      }
-    };
-
-    if (isDragging || isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, isResizing, resizeDirection, resizeStart, dragStart, modalDimensions]);
+  const removeArrayItem = (field: keyof ElementContent, idx: number) => {
+    setEditedData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [field]: normalizeArray((prev as any)[field]).filter((_, i) => i !== idx),
+      } as ElementContent;
+    });
+  };
 
   if (error) {
-    return (
-      <div className="w-full p-6 rounded-lg border-2" style={{ 
-        backgroundColor: '#F0F7FF', 
-        borderColor: theme.colors.primary,
-        color: theme.colors.text 
-      }}>
-        <h3 className="text-lg font-semibold mb-2" style={{ color: theme.colors.primary }}>Erro ao carregar BPMN</h3>
-        <p className="mb-4" style={{ color: theme.colors.textSecondary }}>
-          <span style={{ color: theme.colors.primary }}>BPMN não encontrado:</span> {error}
-        </p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 text-white rounded transition-colors font-medium"
-          style={{ backgroundColor: theme.colors.primary }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
-        >
-          Tentar Novamente
-        </button>
+    return <div className="rounded-lg border p-4 text-sm" style={{ borderColor: theme.colors.accent }}>{error}</div>;
+  }
+
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .quaddra-bpmn .djs-container,
+        .quaddra-bpmn svg { background: #fff !important; }
+        .quaddra-bpmn .djs-element text { paint-order: stroke; stroke: #fff; stroke-width: 0.5px; }
+      ` }} />
+      <div className="quaddra-bpmn rounded-xl border bg-white" style={{ borderColor: '#dbe2ea' }}>
+        <div ref={canvasRef} className="w-full" style={{ height: 'calc(100vh - 240px)', minHeight: 620 }} />
       </div>
+
+      <p className="mt-2 text-xs text-gray-500 text-center">
+        Status: {viewer ? 'Diagrama carregado' : 'Carregando...'} • Dê duplo clique para abrir detalhes
+      </p>
+
+      {showModal && selected && editedData && (
+        <div className="fixed inset-0 z-[120] bg-black/35 p-4 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: '#e5e7eb' }}>
+              <div>
+                <p className="text-xs uppercase tracking-wide" style={{ color: '#6b7280' }}>{selected.tipo || 'Elemento BPMN'}</p>
+                <h3 className="text-xl font-semibold" style={{ color: theme.colors.text }}>{selected.nome}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isEditing ? (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="px-4 py-2 text-white rounded-md"
+                    style={{ backgroundColor: theme.colors.primary }}
+                  >
+                    Editar
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => { setEditedData(selected); setIsEditing(false); }} className="px-4 py-2 rounded-md border">Cancelar</button>
+                    <button
+                      onClick={saveEdits}
+                      className="px-4 py-2 text-white rounded-md"
+                      style={{ backgroundColor: theme.colors.primary }}
+                    >
+                      Salvar
+                    </button>
+                  </>
+                )}
+                <button onClick={() => { setShowModal(false); setIsEditing(false); }} className="px-3 py-2 rounded-md border">Fechar</button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Field title="Ator" readValue={selected.ator || '-'} editing={isEditing}>
+                <input className="w-full border rounded px-3 py-2" value={editedData.ator || ''} onChange={(e) => setEditedData({ ...editedData, ator: e.target.value })} />
+              </Field>
+
+              <ArrayField title="Entradas" readValues={selected.entradas || []} editing={isEditing} values={editedData.entradas || []} onAdd={() => addArrayItem('entradas')} onChange={(i, v) => updateArrayItem('entradas', i, v)} onRemove={(i) => removeArrayItem('entradas', i)} />
+              <ArrayField title="Saídas" readValues={selected.saidas || []} editing={isEditing} values={editedData.saidas || []} onAdd={() => addArrayItem('saidas')} onChange={(i, v) => updateArrayItem('saidas', i, v)} onRemove={(i) => removeArrayItem('saidas', i)} />
+              <ArrayField title="Ferramentas" readValues={selected.ferramentas || []} editing={isEditing} values={editedData.ferramentas || []} onAdd={() => addArrayItem('ferramentas')} onChange={(i, v) => updateArrayItem('ferramentas', i, v)} onRemove={(i) => removeArrayItem('ferramentas', i)} />
+              <ArrayField title="Passo a passo" readValues={selected.passoAPasso || []} editing={isEditing} values={editedData.passoAPasso || []} onAdd={() => addArrayItem('passoAPasso')} onChange={(i, v) => updateArrayItem('passoAPasso', i, v)} onRemove={(i) => removeArrayItem('passoAPasso', i)} />
+              <ArrayField title="Regra de negócio" readValues={selected.regrasDeNegocio || []} editing={isEditing} values={editedData.regrasDeNegocio || []} onAdd={() => addArrayItem('regrasDeNegocio')} onChange={(i, v) => updateArrayItem('regrasDeNegocio', i, v)} onRemove={(i) => removeArrayItem('regrasDeNegocio', i)} />
+              <ArrayField title="POP / IT" readValues={selected.popItReferencia || []} editing={isEditing} values={editedData.popItReferencia || []} onAdd={() => addArrayItem('popItReferencia')} onChange={(i, v) => updateArrayItem('popItReferencia', i, v)} onRemove={(i) => removeArrayItem('popItReferencia', i)} />
+              <ArrayField title="Observações" readValues={selected.observacoes || []} editing={isEditing} values={editedData.observacoes || []} onAdd={() => addArrayItem('observacoes')} onChange={(i, v) => updateArrayItem('observacoes', i, v)} onRemove={(i) => removeArrayItem('observacoes', i)} />
+              <ArrayField title="Textos associados" readValues={selected.textosAssociados || []} editing={isEditing} values={editedData.textosAssociados || []} onAdd={() => addArrayItem('textosAssociados')} onChange={(i, v) => updateArrayItem('textosAssociados', i, v)} onRemove={(i) => removeArrayItem('textosAssociados', i)} />
+
+              <Field title="Texto formatado" readValue={selected.textoFormatado || '-'} editing={isEditing} full>
+                <textarea className="w-full border rounded px-3 py-2 min-h-[120px]" value={editedData.textoFormatado || ''} onChange={(e) => setEditedData({ ...editedData, textoFormatado: e.target.value })} />
+              </Field>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Field({ title, readValue, editing, children, full = false }: { title: string; readValue: string; editing: boolean; children: React.ReactNode; full?: boolean }) {
+  return (
+    <section className={full ? 'md:col-span-2' : ''}>
+      <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">{title}</p>
+      {editing ? children : <p className="text-sm text-gray-800 whitespace-pre-wrap">{readValue}</p>}
+    </section>
+  );
+}
+
+function ArrayField({ title, readValues, editing, values, onAdd, onChange, onRemove }: {
+  title: string;
+  readValues: string[];
+  editing: boolean;
+  values: string[];
+  onAdd: () => void;
+  onChange: (idx: number, value: string) => void;
+  onRemove: (idx: number) => void;
+}) {
+  if (!editing) {
+    return (
+      <section>
+        <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">{title}</p>
+        {readValues.length ? (
+          <ul className="list-disc ml-5 text-sm text-gray-800 space-y-1">{readValues.map((item, i) => <li key={`${title}-${i}`}>{item}</li>)}</ul>
+        ) : (
+          <p className="text-sm text-gray-400">Nenhum item</p>
+        )}
+      </section>
     );
   }
 
   return (
-    <div className="w-full">
-      <div className={`grid grid-cols-1 gap-6 transition-all duration-300 ${isPanelMinimized ? 'lg:grid-cols-1' : 'lg:grid-cols-3'}`}>
-        {/* Container do Diagrama */}
-        <div className={`transition-all duration-300 ${isPanelMinimized ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
-          <div className="relative">
-            <div
-              ref={ref}
-              className="w-full bg-white rounded-lg border border-gray-200 overflow-hidden"
-              style={{
-                height: '80vh',
-                minHeight: '700px',
-                position: 'relative',
-                backgroundColor: '#ffffff'
-              }}
-            />
-
-            {/* Botão para expandir painel (aparece quando minimizado) */}
-            {isPanelMinimized && (
-              <button
-                onClick={() => setIsPanelMinimized(false)}
-                className="absolute top-4 right-4 px-4 py-2 text-white rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl z-50 flex items-center gap-2 font-medium"
-                style={{ backgroundColor: theme.colors.primary }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.colors.primary;
-                }}
-                title="Expandir painel de detalhes"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                </svg>
-                Mostrar Detalhes
-              </button>
-            )}
-          </div>
-
-          {/* Indicador de status */}
-          <div className="mt-2 text-xs text-gray-500 text-center">
-            <p>Status: {viewer ? 'Diagrama carregado' : 'Carregando...'}</p>
-          </div>
-
-          {/* Instruções */}
-          <div className="mt-3 text-xs text-gray-500 text-center">
-            <p>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded">Scroll do mouse</kbd> para zoom, <kbd className="px-1 py-0.5 bg-gray-100 rounded">Clique e arraste</kbd> para mover o diagrama</p>
-          </div>
-
-          {/* Botão de Anexos do Processo */}
-          <div className="mt-4">
-            <button
-              onClick={() => setShowAnexosPanel(!showAnexosPanel)}
-              className="w-full px-4 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-              style={{ backgroundColor: theme.colors.primary }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-              Anexos do Processo
-              {documentos.length > 0 && (
-                <span className="bg-white px-2 py-0.5 rounded-full text-xs font-semibold" style={{ color: theme.colors.primary }}>
-                  {documentos.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Painel de Anexos */}
-          {showAnexosPanel && (
-            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-base font-semibold text-gray-900">Anexos do Processo</h3>
-                <button
-                  onClick={() => setShowAnexosPanel(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Notificação de upload */}
-              {docNotificacao && (
-                <div 
-                  className={`mb-3 p-2 rounded text-sm flex items-center gap-2 border`}
-                  style={{
-                    backgroundColor: docNotificacao.tipo === 'sucesso' ? theme.colors.background : '#f3f4f6',
-                    color: docNotificacao.tipo === 'sucesso' ? theme.colors.text : '#374151',
-                    borderColor: docNotificacao.tipo === 'sucesso' ? theme.colors.border : '#d1d5db'
-                  }}
-                >
-                  {docNotificacao.tipo === 'sucesso' ? (
-                    <svg className="w-4 h-4" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  )}
-                  <span>{docNotificacao.msg}</span>
-                </div>
-              )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleDocUpload}
-                className="hidden"
-                accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
-              />
-
-              {documentos.length === 0 ? (
-                <div className="text-center py-8">
-                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-sm text-gray-500 mb-4">Nenhum anexo neste processo</p>
-                </div>
-              ) : (
-                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
-                  {documentos.map((doc, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <svg className="w-5 h-5 flex-shrink-0" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="text-sm text-gray-800 truncate">{doc.name}</span>
-                      </div>
-                      <div className="flex gap-2 ml-2">
-                        <a
-                          href={doc.path}
-                          download
-                          className="px-3 py-1.5 text-white text-xs rounded transition-colors"
-                          style={{ backgroundColor: theme.colors.primary }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
-                        >
-                          Baixar
-                        </a>
-                        <button
-                          onClick={() => confirmDocDelete(doc.name)}
-                          className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
-                          title="Excluir documento"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingDoc}
-                className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ backgroundColor: theme.colors.primary }}
-                onMouseEnter={(e) => !uploadingDoc && (e.currentTarget.style.backgroundColor = theme.colors.primaryHover)}
-                onMouseLeave={(e) => !uploadingDoc && (e.currentTarget.style.backgroundColor = theme.colors.primary)}
-              >
-                {uploadingDoc ? (
-                  <>
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Enviando...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Anexar Documento
-                  </>
-                )}
-              </button>
-              <p className="text-xs text-gray-400 text-center mt-2">PDF, DOCX, XLSX, TXT, PNG, JPG</p>
-            </div>
-          )}
-
-          {/* Modal de Confirmação de Exclusão */}
-          {docToDelete && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-6 h-6" style={{ color: theme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900">Excluir documento?</h3>
-                  </div>
-                </div>
-                <p className="text-sm text-gray-600 mb-6">
-                  Tem certeza que deseja excluir <strong>&quot;{docToDelete}&quot;</strong>? Esta ação não pode ser desfeita.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={cancelDocDelete}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleDocDelete}
-                    className="flex-1 px-4 py-2 text-white rounded-lg transition-colors font-medium"
-                    style={{ backgroundColor: theme.colors.primary }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.primaryHover}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.primary}
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Painel lateral */}
-        <div className={`lg:col-span-1 transition-all duration-300 ${isPanelMinimized ? 'lg:hidden' : ''}`}>
-          <div className="h-full min-h-[300px] bg-white border border-gray-200 rounded-lg p-4 shadow-sm overflow-y-auto max-h-[80vh]">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-normal text-gray-900">Detalhes da atividade</h3>
-                <button
-                  onClick={() => setIsPanelMinimized(!isPanelMinimized)}
-                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                  title="Minimizar painel"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
-              {selected && !isEditing && (
-                <button
-                  onClick={handleStartEdit}
-                  className="px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
-                  style={{ backgroundColor: theme.colors.primary }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = theme.colors.primary;
-                  }}
-                >
-                  Editar
-                </button>
-              )}
-              {isEditing && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveEdit}
-                    className="px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = theme.colors.primary;
-                    }}
-                  >
-                    Salvar
-                  </button>
-                  <button
-                    onClick={handleCancelEdit}
-                    className="px-4 py-1.5 text-sm font-medium bg-white text-gray-700 border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!contentUrl && (
-              <p className="text-sm text-gray-500">Nenhum conteúdo detalhado configurado.</p>
-            )}
-            {contentUrl && !selected && (
-              <p className="text-sm text-gray-500">Clique em uma tarefa do diagrama para ver os detalhes. Clique duas vezes para abrir o popup.</p>
-            )}
-            {contentUrl && selected && !isEditing && (
-              <div className="space-y-3" style={{ fontWeight: 'normal' }}>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Nome</p>
-                  <p className="text-base text-gray-900" style={{ fontWeight: 400 }}>{selected.nome || selected.id}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Ator</p>
-                  <p className="text-sm text-gray-800" style={{ fontWeight: 400 }}>{selected.ator || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Entradas</p>
-                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.entradas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma entrada cadastrada</li>
-                    ) : (
-                      (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Saídas</p>
-                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.saidas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma saída cadastrada</li>
-                    ) : (
-                      (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Ferramentas</p>
-                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.ferramentas || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
-                    ) : (
-                      (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Passo a passo</p>
-                  <ol className="text-sm text-gray-800 list-decimal list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.passoAPasso || []).length === 0 ? (
-                      <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
-                    ) : (
-                      (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ol>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>POP / IT</p>
-                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.popItReferencia || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma referência cadastrada</li>
-                    ) : (
-                      (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500" style={{ fontWeight: 400 }}>Observações</p>
-                  <ul className="text-sm text-gray-800 list-disc list-inside space-y-1" style={{ fontWeight: 400 }}>
-                    {(selected.observacoes || []).length === 0 ? (
-                      <li className="text-gray-400">Nenhuma observação cadastrada</li>
-                    ) : (
-                      (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                    )}
-                  </ul>
-                </div>
-              </div>
-            )}
-            {contentUrl && isEditing && editedData && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Nome</label>
-                  <input
-                    type="text"
-                    value={editedData.nome || ''}
-                    onChange={(e) => handleFieldChange('nome', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Ator</label>
-                  <input
-                    type="text"
-                    value={editedData.ator || ''}
-                    onChange={(e) => handleFieldChange('ator', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Entradas</label>
-                  {(editedData.entradas || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('entradas', idx, e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('entradas', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('entradas')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar entrada
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Saídas</label>
-                  {(editedData.saidas || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('saidas', idx, e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('saidas', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('saidas')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar saída
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Ferramentas</label>
-                  {(editedData.ferramentas || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('ferramentas', idx, e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('ferramentas', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('ferramentas')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar ferramenta
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Passo a passo</label>
-                  {(editedData.passoAPasso || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <span className="text-sm text-gray-600 mt-2">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('passoAPasso', idx, e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('passoAPasso', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('passoAPasso')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar passo
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">POP / IT</label>
-                  {(editedData.popItReferencia || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('popItReferencia', idx, e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('popItReferencia', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('popItReferencia')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar referência
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-gray-500 font-normal block mb-1">Observações</label>
-                  {(editedData.observacoes || []).map((item: string, idx: number) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <textarea
-                        value={item}
-                        onChange={(e) => handleArrayFieldChange('observacoes', idx, e.target.value)}
-                        rows={2}
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <button
-                        onClick={() => handleArrayFieldRemove('observacoes', idx)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md transition-all duration-150 font-medium text-sm"
-                        title="Remover"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => handleArrayFieldAdd('observacoes')}
-                    className="text-sm font-medium px-3 py-1 rounded-md transition-all duration-150"
-                    style={{ color: theme.colors.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = theme.colors.primaryHover;
-                      e.currentTarget.style.backgroundColor = theme.colors.background;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = theme.colors.primary;
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    + Adicionar observação
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs uppercase tracking-wide text-gray-500">{title}</p>
+        <button type="button" className="text-xs px-2 py-1 rounded border" onClick={onAdd}>+ Adicionar</button>
       </div>
-
-      {/* Modal de detalhes (duplo clique) - Arrastável e Redimensionável */}
-      {showModal && selected && (
-        <div
-          className="fixed z-50 bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
-          style={{
-            left: `${modalPosition.x}px`,
-            top: `${modalPosition.y}px`,
-            width: `${modalDimensions.width}px`,
-            height: `${modalDimensions.height}px`,
-            minWidth: '400px',
-            minHeight: '300px',
-            maxWidth: '95vw',
-            maxHeight: '95vh'
-          }}
-        >
-          {/* Barra superior - área de arrastar */}
-          <div
-            className="drag-handle flex justify-between items-center p-4 border-b border-gray-200 text-white cursor-move select-none"
-            style={{ backgroundColor: theme.colors.primary }}
-            onMouseDown={(e) => {
-              // Só arrastar se não estiver clicando em um botão ou handle de redimensionamento
-              const target = e.target as HTMLElement;
-              if (target.closest('button') || target.closest('.resize-handle')) {
-                return;
-              }
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDragging(true);
-              setDragStart({
-                x: e.clientX - modalPosition.x,
-                y: e.clientY - modalPosition.y
-              });
-            }}
-          >
-            <h2 className="text-xl font-semibold">{selected.nome || selected.id}</h2>
-            <button
-              onClick={() => {
-                setShowModal(false);
-                setModalDimensions({ width: 1000, height: 700 });
-                setModalPosition({ x: 0, y: 0 });
-              }}
-              className="w-8 h-8 flex items-center justify-center text-white hover:bg-white hover:bg-opacity-20 rounded-lg text-2xl transition-all duration-200"
-              title="Fechar"
-            >
-              ×
-            </button>
+      <div className="space-y-2">
+        {values.map((item, idx) => (
+          <div key={`${title}-edit-${idx}`} className="flex gap-2">
+            <input className="flex-1 border rounded px-3 py-2 text-sm" value={item} onChange={(e) => onChange(idx, e.target.value)} />
+            <button type="button" className="px-2 border rounded text-sm" onClick={() => onRemove(idx)}>x</button>
           </div>
-          <div className="p-6 overflow-y-auto flex-1">
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ator</h3>
-                <p className="text-base text-gray-900">{selected.ator || '-'}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Entradas</h3>
-                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                  {(selected.entradas || []).length === 0 ? (
-                    <li className="text-gray-400">Nenhuma entrada cadastrada</li>
-                  ) : (
-                    (selected.entradas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Saídas</h3>
-                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                  {(selected.saidas || []).length === 0 ? (
-                    <li className="text-gray-400">Nenhuma saída cadastrada</li>
-                  ) : (
-                    (selected.saidas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Ferramentas</h3>
-                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                  {(selected.ferramentas || []).length === 0 ? (
-                    <li className="text-gray-400">Nenhuma ferramenta cadastrada</li>
-                  ) : (
-                    (selected.ferramentas || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Passo a passo</h3>
-                <ol className="text-base text-gray-900 list-decimal list-inside space-y-1">
-                  {(selected.passoAPasso || []).length === 0 ? (
-                    <li className="text-gray-400 list-none">Nenhum passo cadastrado</li>
-                  ) : (
-                    (selected.passoAPasso || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ol>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">POP / IT</h3>
-                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                  {(selected.popItReferencia || []).length === 0 ? (
-                    <li className="text-gray-400">Nenhuma referência cadastrada</li>
-                  ) : (
-                    (selected.popItReferencia || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-normal text-gray-500 uppercase mb-2">Observações</h3>
-                <ul className="text-base text-gray-900 list-disc list-inside space-y-1">
-                  {(selected.observacoes || []).length === 0 ? (
-                    <li className="text-gray-400">Nenhuma observação cadastrada</li>
-                  ) : (
-                    (selected.observacoes || []).map((i: string, idx: number) => <li key={idx}>{i}</li>)
-                  )}
-                </ul>
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
-            <button
-              onClick={() => {
-                setShowModal(false);
-                setModalDimensions({ width: 800, height: 600 });
-                setModalPosition({ x: 0, y: 0 });
-              }}
-              className="px-6 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
-            >
-              Fechar
-            </button>
-          </div>
-
-          {/* Handles de redimensionamento nas bordas - só redimensiona quando clica e arrasta */}
-          {/* Borda superior */}
-          <div
-            className="resize-handle absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false); // Garantir que não está arrastando
-              setResizeDirection('n');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          {/* Borda inferior */}
-          <div
-            className="resize-handle absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('s');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          {/* Borda esquerda */}
-          <div
-            className="resize-handle absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('w');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          {/* Borda direita */}
-          <div
-            className="resize-handle absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('e');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          {/* Cantos */}
-          <div
-            className="resize-handle absolute top-0 left-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('nw');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          <div
-            className="resize-handle absolute top-0 right-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('ne');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          <div
-            className="resize-handle absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('sw');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-          <div
-            className="resize-handle absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-orange-300 hover:bg-opacity-30 z-10"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsResizing(true);
-              setIsDragging(false);
-              setResizeDirection('se');
-              setResizeStart({
-                x: e.clientX,
-                y: e.clientY,
-                width: modalDimensions.width,
-                height: modalDimensions.height,
-                posX: modalPosition.x,
-                posY: modalPosition.y
-              });
-            }}
-          />
-        </div>
-      )}
-    </div>
+        ))}
+      </div>
+    </section>
   );
 }

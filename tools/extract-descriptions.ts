@@ -5,6 +5,8 @@ interface BpmnElement {
   id: string;
   name?: string;
   description?: string;
+  textoFormatado?: string;
+  textosAssociados?: string[];
   type?: string;
   processName?: string;
   file?: string;
@@ -24,6 +26,8 @@ interface DescriptionsData {
 
 function extractDescriptionsFromBpmn(xmlContent: string, filename: string): ProcessData {
   const elements: ProcessData = {};
+  const textAnnotations: Record<string, string> = {};
+  const associations: Array<{ sourceRef: string; targetRef: string }> = [];
   
   // Extrair elementos do processo
   const processMatch = xmlContent.match(/<process[^>]*id="([^"]*)"[^>]*>/);
@@ -80,6 +84,32 @@ function extractDescriptionsFromBpmn(xmlContent: string, filename: string): Proc
       processName: processId,
       file: filename
     };
+  }
+
+  // Extrair textAnnotation com possível formatação
+  const textAnnotationRegex = /<textAnnotation[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/textAnnotation>/g;
+  while ((match = textAnnotationRegex.exec(xmlContent)) !== null) {
+    const [, annotationId, annotationBody] = match;
+    const textMatch = annotationBody.match(/<text[^>]*>([\s\S]*?)<\/text>/i);
+    if (!textMatch) continue;
+    textAnnotations[annotationId] = textMatch[1].trim();
+  }
+
+  // Extrair associações de annotation para elementos
+  const associationRegex = /<association[^>]*sourceRef="([^"]+)"[^>]*targetRef="([^"]+)"[^>]*\/?>(?:<\/association>)?/g;
+  while ((match = associationRegex.exec(xmlContent)) !== null) {
+    const [, sourceRef, targetRef] = match;
+    associations.push({ sourceRef, targetRef });
+  }
+
+  for (const { sourceRef, targetRef } of associations) {
+    const text = textAnnotations[sourceRef];
+    if (!text || !elements[targetRef]) continue;
+
+    elements[targetRef].textosAssociados = [...(elements[targetRef].textosAssociados || []), text];
+    if (!elements[targetRef].textoFormatado) {
+      elements[targetRef].textoFormatado = text;
+    }
   }
   
   return elements;

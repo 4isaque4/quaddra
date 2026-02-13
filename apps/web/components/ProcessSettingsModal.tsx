@@ -40,6 +40,15 @@ export default function ProcessSettingsModal({
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
 
+  const sanitizeFolderPath = (value: string): string => {
+    return value
+      .replace(/\\/g, '/')
+      .split('/')
+      .map((segment) => segment.trim().replace(/[^a-zA-Z0-9-_\s]/g, '-').replace(/\s+/g, '-'))
+      .filter((segment) => segment && segment !== '.' && segment !== '..')
+      .join('/');
+  };
+
   useEffect(() => {
     if (isOpen) {
       // Carregar nome customizado do localStorage
@@ -89,6 +98,8 @@ export default function ProcessSettingsModal({
         // Se não há pastas, começar vazio para o usuário criar
         if (customFolders.length === 0) {
           setSelectedFolder('__new__');
+        } else {
+          setSelectedFolder((prev) => (prev && prev !== '__new__' ? prev : customFolders[0]));
         }
       } else {
         // Se a API não existir ainda, começar vazio
@@ -103,35 +114,46 @@ export default function ProcessSettingsModal({
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const folderToUse = sanitizeFolderPath(selectedFolder === '__new__' ? newFolderName.trim() : selectedFolder);
+    if (!folderToUse) {
+      setNotificacao({ tipo: 'aviso', mensagem: 'Informe uma pasta válida para o upload.' });
+      return;
+    }
 
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // Se está criando nova pasta, usar o nome digitado, senão usar a pasta selecionada
-      const folderToUse = selectedFolder === '__new__' ? newFolderName.trim() : selectedFolder;
-      formData.append('folder', folderToUse);
+      let uploaded = 0;
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folder', folderToUse);
 
-      const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
-        method: 'POST',
-        body: formData
-      });
+        const response = await fetch(`/api/documents/${encodeURIComponent(processSlug)}`, {
+          method: 'POST',
+          body: formData
+        });
 
-      if (response.ok) {
-        setNotificacao({ tipo: 'sucesso', mensagem: 'Documento enviado com sucesso!' });
-        loadDocuments(); // Recarregar lista
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''; // Limpar input
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || `Falha ao enviar ${file.name}`);
         }
-      } else {
-        const data = await response.json();
-        setNotificacao({ tipo: 'erro', mensagem: `Erro ao enviar documento: ${data.error || 'Erro desconhecido'}` });
+        uploaded += 1;
       }
-    } catch (error) {
+
+      setNotificacao({ tipo: 'sucesso', mensagem: `${uploaded} documento(s) enviado(s) com sucesso!` });
+      await Promise.all([loadDocuments(), loadAvailableFolders()]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      if (selectedFolder === '__new__') {
+        setSelectedFolder(folderToUse);
+      }
+    } catch (error: any) {
       console.error('Erro ao fazer upload:', error);
-      setNotificacao({ tipo: 'erro', mensagem: 'Erro ao enviar documento' });
+      setNotificacao({ tipo: 'erro', mensagem: error?.message || 'Erro ao enviar documento' });
     } finally {
       setIsUploading(false);
     }
@@ -446,6 +468,7 @@ export default function ProcessSettingsModal({
                   <input
                     ref={fileInputRef}
                     type="file"
+                    multiple
                     onChange={handleFileSelect}
                     className="hidden"
                     accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.png,.jpg,.jpeg"
