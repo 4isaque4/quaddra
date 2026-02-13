@@ -11,7 +11,8 @@ import {
 } from '@/lib/process-storage'
 
 type FolderConfig = {
-  name: string
+  name?: string
+  path?: string
   fileCount: number
 }
 
@@ -47,6 +48,26 @@ function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ success: false, error: message, details }, { status })
 }
 
+
+function getFilesByFolderPath(formData: FormData, folderPath: string): File[] {
+  const normalized = sanitizeRelativePath(folderPath) || 'root'
+  const directKey = `folder_${normalized}`
+  const directFiles = formData.getAll(directKey).filter((entry): entry is File => entry instanceof File)
+
+  if (directFiles.length) return directFiles
+
+  const fallbackFiles: File[] = []
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith('folder_') || !(value instanceof File)) continue
+    const keyPath = sanitizeRelativePath(key.replace(/^folder_/, '')) || 'root'
+    if (keyPath === normalized) {
+      fallbackFiles.push(value)
+    }
+  }
+
+  return fallbackFiles
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData()
@@ -65,11 +86,15 @@ export async function POST(request: Request) {
         const parsed = JSON.parse(folderStructureRaw)
         if (Array.isArray(parsed)) {
           folderStructure = parsed
-            .map((item) => ({
-              name: sanitizeRelativePath(String(item?.name || '')),
-              fileCount: Number(item?.fileCount || 0),
-            }))
-            .filter((item) => item.name || item.fileCount > 0)
+            .map((item) => {
+              const normalizedPath = sanitizeRelativePath(String(item?.path || item?.name || ''))
+              return {
+                name: normalizedPath,
+                path: normalizedPath,
+                fileCount: Number(item?.fileCount || 0),
+              }
+            })
+            .filter((item) => item.path || item.fileCount > 0)
         }
       } catch (error: any) {
         return jsonError('Estrutura de pastas inválida', 400, error?.message)
@@ -82,9 +107,18 @@ export async function POST(request: Request) {
     const uploadEntries: UploadEntry[] = []
     const duplicateGuard = new Set<string>()
 
+    if (!folderStructure.length) {
+      const discovered = new Set<string>()
+      for (const [key, value] of formData.entries()) {
+        if (!key.startsWith('folder_') || !(value instanceof File)) continue
+        discovered.add(sanitizeRelativePath(key.replace(/^folder_/, '')) || 'root')
+      }
+      folderStructure = [...discovered].map((path) => ({ path, name: path, fileCount: 0 }))
+    }
+
     for (const folder of folderStructure) {
-      const folderName = folder.name || 'root'
-      const files = formData.getAll(`folder_${folderName}`) as File[]
+      const folderName = sanitizeRelativePath(folder.path || folder.name || 'root') || 'root'
+      const files = getFilesByFolderPath(formData, folderName)
       if (!files.length) continue
 
       for (const file of files) {
@@ -95,10 +129,15 @@ export async function POST(request: Request) {
         }
 
         const fileBuffer = Buffer.from(await file.arrayBuffer())
-        const targetFolder = folderName === 'root' ? sanitizeRelativePath(processName) : sanitizeRelativePath(folderName)
-        const githubPath = `${targetFolder}/${safeFileName}`.replace(/\/+/g, '/')
+        const targetFolder = folderName === 'root'
+          ? sanitizeRelativePath(processName)
+          : sanitizeRelativePath(folderName)
 
-        if (!targetFolder) return jsonError('Nome de pasta inválido detectado no upload', 400)
+        if (!targetFolder) {
+          return jsonError('Nome de pasta inválido detectado no upload', 400, { folderName })
+        }
+
+        const githubPath = `${targetFolder}/${safeFileName}`.replace(/\/+/g, '/')
         if (duplicateGuard.has(githubPath)) {
           return jsonError(`Arquivo duplicado no payload: ${githubPath}`, 400)
         }
@@ -114,6 +153,14 @@ export async function POST(request: Request) {
           contentBase64: fileBuffer.toString('base64'),
         })
       }
+    }
+
+    const expectedFiles = folderStructure.reduce((acc, folder) => acc + Number(folder.fileCount || 0), 0)
+    if (expectedFiles > 0 && uploadEntries.length !== expectedFiles) {
+      return jsonError('Quantidade de arquivos enviada não confere com a estrutura informada', 400, {
+        expectedFiles,
+        receivedFiles: uploadEntries.length,
+      })
     }
 
     if (!uploadEntries.length) {
