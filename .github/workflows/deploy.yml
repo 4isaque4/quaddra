@@ -36,13 +36,42 @@ jobs:
           npm run build
 
       - name: Check VPS connectivity
+        id: vps_check
+        shell: bash
         run: |
-          echo "🔍 Verificando conectividade com VPS..."
-          echo "📡 Tentando conectar na porta 22..."
-          timeout 10 bash -c "echo > /dev/tcp/${{ secrets.VPS_HOST }}/22" 2>/dev/null && echo "✅ Servidor acessível" || echo "⚠️ Servidor pode estar inacessível (continuando mesmo assim...)"
-          echo "🔐 Testando autenticação SSH..."
+          set -e
+          HOST="${{ secrets.VPS_HOST }}"
+          PORT=22
+
+          echo "🔍 Verificando conectividade com VPS (${HOST}:${PORT})..."
+
+          ok=false
+          for attempt in 1 2 3; do
+            echo "📡 Tentativa ${attempt}/3..."
+            if timeout 8 bash -c "echo > /dev/tcp/${HOST}/${PORT}" 2>/dev/null; then
+              ok=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ok" = true ]; then
+            echo "✅ Servidor acessível na porta ${PORT}."
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Servidor inacessível na porta ${PORT}."
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail fast when VPS is unreachable
+        if: steps.vps_check.outputs.reachable != 'true'
+        run: |
+          echo "❌ Deploy abortado: sem conectividade SSH com o VPS."
+          echo "➡️ Verifique VPS_HOST, firewall/security group e disponibilidade da porta 22."
+          exit 1
 
       - name: Deploy to VPS
+        if: steps.vps_check.outputs.reachable == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN_QUADRRA }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -52,41 +81,29 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          timeout: 300s
-          command_timeout: 600s
+          timeout: 45s
+          command_timeout: 900s
           use_insecure_cipher: false
           envs: GITHUB_TOKEN,DATABASE_URL
           script: |
             set -e
             echo "🚀 Iniciando deploy..."
-            echo "📡 Verificando conectividade com o servidor..."
-            
-            if ! ping -c 3 localhost > /dev/null 2>&1; then
-              echo "⚠️ Aviso: Problemas de conectividade detectados"
-            fi
-            
+
             cd /var/www/quaddra || {
               echo "❌ Erro: Diretório /var/www/quaddra não encontrado!"
               exit 1
             }
-            
-            # Prisma 7 e dependências exigem Node 20.19+. Garantir Node 20 no servidor.
+
             need_node20() {
               echo "❌ Este projeto exige Node.js 20.19+ (Prisma 7)."
-              echo "   No servidor, instale e use Node 20, por exemplo:"
-              echo "   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
-              echo "   source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20"
+              echo "   Instale Node 20 no servidor e tente novamente."
               exit 1
             }
+
             NODE_VER=$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1) || true
             if [ -z "$NODE_VER" ] || [ "$NODE_VER" -lt 20 ] 2>/dev/null; then
               if [ -s "$HOME/.nvm/nvm.sh" ]; then
-                echo "📦 Ativando Node 20 via nvm..."
                 . "$HOME/.nvm/nvm.sh"
-                nvm install 20 2>/dev/null || true
-                nvm use 20
-              elif [ -s "/root/.nvm/nvm.sh" ]; then
-                . "/root/.nvm/nvm.sh"
                 nvm install 20 2>/dev/null || true
                 nvm use 20
               else
@@ -94,82 +111,51 @@ jobs:
               fi
             fi
             echo "✅ Node $(node -v)"
-            
-            # Fazer backup rápido do .env (se existir)
+
             if [ -f apps/web/.env.local ]; then
               cp apps/web/.env.local /tmp/.env.local.backup
             fi
-            
-            # Atualizar código do repositório
+
             git fetch origin
             git reset --hard origin/main
-            
-            # Restaurar .env (se existir backup) ou criar novo com variáveis mínimas
+
             if [ -f /tmp/.env.local.backup ]; then
               cp /tmp/.env.local.backup apps/web/.env.local
               echo "✅ .env.local restaurado do backup"
-            else
-              # Criar .env.local se não existir (com valores padrão)
-              if [ ! -f apps/web/.env.local ]; then
-                echo "⚠️ Criando .env.local (valores dos segredos DEPLOY_TOKEN_QUADRRA e DATABASE_URL)..."
-                {
-                  echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"
-                  echo "DATABASE_URL=${DATABASE_URL:-}"
-                  echo "GITHUB_OWNER=4isaque4"
-                  echo "GITHUB_REPO_QUADDRA=vale-shope-processos"
-                  echo "GITHUB_REPO_VALESHOP=vale-shope-processos"
-                  echo "GITHUB_BRANCH=main"
-                } > apps/web/.env.local
-                if [ -n "$GITHUB_TOKEN" ]; then echo "✅ GITHUB_TOKEN preenchido"; fi
-                if [ -n "$DATABASE_URL" ]; then echo "✅ DATABASE_URL preenchido"; fi
-              fi
             fi
-            # Garantir DATABASE_URL no .env.local para prisma generate e para a app em runtime
+
+            if [ ! -f apps/web/.env.local ]; then
+              {
+                echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"
+                echo "DATABASE_URL=${DATABASE_URL:-}"
+                echo "GITHUB_OWNER=4isaque4"
+                echo "GITHUB_REPO_QUADDRA=vale-shope-processos"
+                echo "GITHUB_REPO_VALESHOP=vale-shope-processos"
+                echo "GITHUB_BRANCH=main"
+              } > apps/web/.env.local
+              echo "✅ .env.local criado"
+            fi
+
             if [ -n "$DATABASE_URL" ] && ! grep -q '^DATABASE_URL=' apps/web/.env.local 2>/dev/null; then
               echo "DATABASE_URL=$DATABASE_URL" >> apps/web/.env.local
-              echo "✅ DATABASE_URL adicionado ao .env.local"
             fi
-            
-            # Instalar dependências
+
             npm install
-            
-            # Build da aplicação
+
             cd apps/web
-            
-            # Limpar cache do Next.js antes do build
-            echo "🧹 Limpando cache do Next.js..."
-            rm -rf .next
-            rm -rf node_modules/.cache
-            
-            # Build (Prisma 7 exige DATABASE_URL no ambiente para prisma.config.ts)
-            echo "🔨 Executando build..."
+            rm -rf .next node_modules/.cache
             export DATABASE_URL="${DATABASE_URL:-$(grep -E '^DATABASE_URL=' .env.local 2>/dev/null | cut -d= -f2-)}"
+            npx prisma generate
             npm run build
-            
             cd ../..
-            
-            # Parar e deletar processo antigo do PM2
-            echo "🛑 Parando aplicação antiga..."
+
             pm2 stop quaddra-web 2>/dev/null || true
             pm2 delete quaddra-web 2>/dev/null || true
-            
-            # Aguardar um pouco para garantir que o processo foi encerrado
-            sleep 2
-            
-            # Limpar cache do PM2
-            pm2 flush quaddra-web 2>/dev/null || true
-            
-            # Iniciar aplicação com PM2 usando o ecosystem.config.js
-            echo "🚀 Iniciando aplicação..."
             pm2 start apps/web/ecosystem.config.js
             pm2 save
-            
-            # Aguardar aplicação iniciar
-            sleep 3
-            
-            # Verificar se a aplicação está rodando
+
+            sleep 2
             pm2 describe quaddra-web
-            
             echo "✅ Deploy concluído com sucesso!"
             pm2 status
             pm2 logs quaddra-web --lines 10 --nostream
@@ -177,7 +163,7 @@ jobs:
       - name: Notify deployment status
         if: always()
         run: |
-          if [ ${{ job.status }} == 'success' ]; then
+          if [ "${{ job.status }}" = 'success' ]; then
             echo "✅ Deploy realizado com sucesso!"
           else
             echo "❌ Deploy falhou!"
