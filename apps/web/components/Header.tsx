@@ -4,117 +4,71 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { useTheme } from '@/contexts/ThemeContext'
+import { Search, KeyRound, ChevronDown } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const pathname = usePathname()
-  const { theme } = useTheme()
-  
   const isValeShop = pathname?.startsWith('/vale-shop')
 
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen)
-  }
+  const toggleMenu = () => setIsMenuOpen((prev) => !prev)
+  const closeMenu = () => setIsMenuOpen(false)
 
-  const closeMenu = () => {
-    setIsMenuOpen(false)
-  }
+  const valeLinks = [
+    { href: '/vale-shop/processos', label: 'Processos' },
+    { href: '/vale-shop/processos/inserir', label: 'Inserir Processos' },
+    { href: '/', label: 'Voltar para Quaddra' },
+  ]
 
   return (
-    <header className="bg-white shadow-sm fixed top-0 left-0 w-full z-50 h-24">
-      {/* Remove o ::after do CSS global quando estiver na ValeShop */}
+    <header
+      className="fixed top-0 left-0 w-full z-50 h-24 shadow-sm"
+      style={{ backgroundColor: isValeShop ? '#005EA8' : '#fff' }}
+    >
       {isValeShop && (
-        <style dangerouslySetInnerHTML={{
-          __html: `
-            .nav-link::after {
-              display: none !important;
-            }
-          `
-        }} />
+        <style dangerouslySetInnerHTML={{ __html: `.nav-link::after { display: none !important; }` }} />
       )}
-      
+
       <nav className="container flex justify-between items-center h-full">
-        <Link href={isValeShop ? "/vale-shop/processos" : "/"} className="logo" onClick={closeMenu}>
+        <Link href={isValeShop ? '/vale-shop/processos' : '/'} className="logo" onClick={closeMenu}>
           {isValeShop ? (
-            <Image 
-              src="/valeshop-logo.png" 
-              alt="ValeShop" 
-              width={180} 
-              height={60}
-              priority
-              style={{ height: 'auto', width: '180px' }}
-              className="logo-image"
-            />
+            <Image src="/valeshop-logo.png" alt="ValeShop" width={180} height={60} priority style={{ height: 'auto', width: '180px' }} />
           ) : (
-            <Image 
-              src="/logo.png" 
-              alt="Quaddra" 
-              width={1200} 
-              height={300}
-              priority
-              style={{ height: '200px', width: 'auto' }}
-              className="logo-image"
-            />
+            <Image src="/logo.png" alt="Quaddra" width={1200} height={300} priority style={{ height: '200px', width: 'auto' }} />
           )}
         </Link>
-        
-        <ul className={`nav-links ${isMenuOpen ? 'left-0' : '-left-full'} lg:static lg:flex lg:flex-row lg:bg-transparent lg:shadow-none lg:h-auto lg:w-auto lg:gap-8`}>
+
+        <ul
+          className={`nav-links ${isMenuOpen ? 'left-0' : '-left-full'} lg:static lg:flex lg:flex-row lg:bg-transparent lg:shadow-none lg:h-auto lg:w-auto lg:gap-6`}
+          style={{ backgroundColor: isValeShop ? '#005EA8' : undefined }}
+        >
           {isValeShop ? (
             <>
+              {valeLinks.map((item) => {
+                const active = pathname === item.href
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href as '/' | '/vale-shop/processos' | '/vale-shop/processos/inserir'}
+                      className="nav-link flex items-center gap-1"
+                      onClick={closeMenu}
+                      style={{ color: '#fff', borderBottom: active ? '2px solid #FFD24A' : 'none' }}
+                    >
+                      <span>{item.label}</span>
+                      {item.href !== '/' && <ChevronDown className="w-3 h-3 opacity-80" />}
+                    </Link>
+                  </li>
+                )
+              })}
               <li>
-                <Link 
-                  href="/vale-shop/processos" 
-                  className="nav-link" 
-                  onClick={closeMenu}
-                  style={{
-                    color: pathname === '/vale-shop/processos' ? theme.colors.primary : theme.colors.textSecondary,
-                    borderBottom: pathname === '/vale-shop/processos' ? `2px solid ${theme.colors.primary}` : 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = theme.colors.primary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = pathname === '/vale-shop/processos' ? theme.colors.primary : theme.colors.textSecondary;
-                  }}
-                >
-                  Processos
-                </Link>
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#FFD24A] text-[#FFD24A] text-sm font-semibold">
+                  <KeyRound className="w-4 h-4" /> Meu acesso
+                </span>
               </li>
               <li>
-                <Link 
-                  href="/vale-shop/processos/inserir" 
-                  className="nav-link" 
-                  onClick={closeMenu}
-                  style={{
-                    color: pathname === '/vale-shop/processos/inserir' ? theme.colors.primary : theme.colors.textSecondary,
-                    borderBottom: pathname === '/vale-shop/processos/inserir' ? `2px solid ${theme.colors.primary}` : 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = theme.colors.primary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = pathname === '/vale-shop/processos/inserir' ? theme.colors.primary : theme.colors.textSecondary;
-                  }}
-                >
-                  Inserir Processos
-                </Link>
-              </li>
-              <li>
-                <Link 
-                  href="/" 
-                  className="nav-link" 
-                  onClick={closeMenu}
-                  style={{ color: theme.colors.textSecondary }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = theme.colors.primary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = theme.colors.textSecondary;
-                  }}
-                >
-                  Voltar para Quaddra
-                </Link>
+                <button type="button" className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/80 text-white">
+                  <Search className="w-4 h-4" />
+                </button>
               </li>
             </>
           ) : (
@@ -127,15 +81,11 @@ export default function Header() {
             </>
           )}
         </ul>
-        
-        <button 
-          className="lg:hidden menu-toggle z-50"
-          onClick={toggleMenu}
-          aria-label="Abrir menu"
-        >
-          <span className={`block w-6 h-0.5 bg-gray-800 transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`}></span>
-          <span className={`block w-6 h-0.5 bg-gray-800 my-1.5 transition-all duration-300 ${isMenuOpen ? 'opacity-0' : ''}`}></span>
-          <span className={`block w-6 h-0.5 bg-gray-800 transition-all duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`}></span>
+
+        <button className="lg:hidden menu-toggle z-50" onClick={toggleMenu} aria-label="Abrir menu">
+          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
+          <span className={`block w-6 h-0.5 my-1.5 transition-all duration-300 ${isMenuOpen ? 'opacity-0' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
+          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
         </button>
       </nav>
     </header>

@@ -1,0 +1,148 @@
+// Schema do banco de dados Quaddra
+// Banco de dados robusto e escalável para armazenar informações de processos BPMN
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// No Prisma 7 a URL fica em prisma.config.ts (datasource.url)
+datasource db {
+  provider = "postgresql"
+}
+
+// Tabela de processos principais
+model Process {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  nome        String
+  arquivoBpmn String   // Nome do arquivo BPMN
+  categoria   String?  // Categoria/pasta do processo
+  folderPath  String?  // Caminho completo da pasta no GitHub
+  clientType  String   @default("quaddra") // "quaddra" ou "valeshop"
+  githubPath  String?  // Caminho completo no GitHub
+  
+  // Metadados
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relacionamentos
+  elements    ProcessElement[]
+  customName  ProcessCustomName?
+  documents   ProcessDocument[]
+
+  // Índices para performance
+  @@index([slug])
+  @@index([clientType])
+  @@index([categoria])
+  @@index([createdAt])
+  @@map("processes")
+}
+
+// Tabela de elementos de processo (ator, entradas, saídas, etc)
+model ProcessElement {
+  id            String   @id @default(cuid())
+  processId     String
+  elementId     String   // ID do elemento no BPMN (ex: "Id_cf9b3e35-...")
+  nome          String
+  tipo          String?  // Tipo do elemento (task, gateway, event, etc)
+  
+  // Informações principais
+  ator          String?  // Ator responsável
+  descricao     String?  @db.Text
+  
+  // Arrays de informações (armazenados como JSON para flexibilidade)
+  entradas      Json     @default("[]") // Array de strings
+  saidas        Json     @default("[]") // Array de strings
+  ferramentas   Json     @default("[]") // Array de strings
+  passoAPasso   Json     @default("[]") // Array de strings
+  popItReferencia Json   @default("[]") // Array de strings
+  observacoes   Json     @default("[]") // Array de strings
+  
+  // Metadados
+  fonteDocx     String?  // Arquivo DOCX de origem
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relacionamentos
+  process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  
+  // Índices para performance e unicidade
+  @@unique([processId, elementId])
+  @@index([processId])
+  @@index([elementId])
+  @@index([nome])
+  @@map("process_elements")
+}
+
+// Tabela para nomes customizados de processos (substitui localStorage)
+model ProcessCustomName {
+  id        String   @id @default(cuid())
+  processId String   @unique
+  customName String
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  process   Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  
+  @@map("process_custom_names")
+}
+
+// Tabela para edições locais de elementos (substitui localStorage)
+model ProcessElementEdit {
+  id            String   @id @default(cuid())
+  processSlug   String   // Slug do processo
+  elementId     String   // ID do elemento no BPMN
+  bpmnUrl       String   // URL do BPMN para identificar contexto
+  
+  // Dados editados (armazenados como JSON)
+  editedData    Json     // Objeto com campos editados
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Índices para busca rápida
+  @@unique([processSlug, elementId, bpmnUrl])
+  @@index([processSlug])
+  @@index([elementId])
+  @@map("process_element_edits")
+}
+
+// Tabela para documentos anexados aos processos
+model ProcessDocument {
+  id          String   @id @default(cuid())
+  processId   String
+  fileName    String
+  filePath    String   // Caminho relativo do arquivo
+  folder      String?  // Pasta onde o arquivo está
+  fileSize    Int      // Tamanho em bytes
+  mimeType    String?  // Tipo MIME do arquivo
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  
+  @@index([processId])
+  @@index([folder])
+  @@map("process_documents")
+}
+
+// Tabela para histórico de mudanças (auditoria)
+model ProcessAuditLog {
+  id          String   @id @default(cuid())
+  processId   String?
+  elementId   String?
+  action      String   // "create", "update", "delete"
+  entityType  String   // "process", "element", "document"
+  changes     Json?    // Mudanças realizadas
+  userId      String?  // ID do usuário (se houver autenticação)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([processId])
+  @@index([elementId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("process_audit_logs")
+}

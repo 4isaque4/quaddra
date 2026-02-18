@@ -17,6 +17,30 @@ type FolderConfig = {
   parentId?: string;
 };
 
+type FlattenedFolder = {
+  path: string;
+  files: File[];
+};
+
+const normalizeFolderSegment = (value: string): string => {
+  return value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/[<>:"|?*]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+$/, '')
+    .replace(/^\/+|\/+$/g, '');
+};
+
+const sanitizeRelativePath = (value: string): string => {
+  return value
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => normalizeFolderSegment(segment))
+    .filter((segment) => segment && segment !== '.' && segment !== '..')
+    .join('/');
+};
+
 export default function InserirProcessoPage() {
   const { theme } = useTheme();
   const pathname = usePathname();
@@ -39,6 +63,9 @@ export default function InserirProcessoPage() {
   const [draggedFile, setDraggedFile] = useState<{ file: File, sourceFolderId: string | null } | null>(null);
   const [creatingFolder, setCreatingFolder] = useState<string | null>(null); // ID da pasta pai ou null para raiz
   const [newFolderName, setNewFolderName] = useState('');
+  const [bulkFoldersText, setBulkFoldersText] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number; currentPath: string }>({ done: 0, total: 0, currentPath: '' });
+  const [forceUpload, setForceUpload] = useState(false);
 
   const extractHtmlErrorMessage = (html: string): string => {
     const titleMatch = html.match(/<title>(.*?)<\/title>/i);
@@ -78,14 +105,19 @@ export default function InserirProcessoPage() {
     clientType: string;
     folderPath: string;
     files: File[];
+    forceUpload?: boolean;
   }): FormData => {
-    const { processName, clientType, folderPath, files } = params;
+    const { processName, clientType, folderPath, files, forceUpload } = params;
     const formData = new FormData();
     formData.append('processName', processName);
     formData.append('clientType', clientType);
+    if (forceUpload) formData.append('forceUpload', '1');
 
-    const normalizedPath = folderPath || 'root';
-    formData.append('folderStructure', JSON.stringify([{ name: normalizedPath, fileCount: files.length }]));
+    const normalizedPath = sanitizeRelativePath(folderPath) || 'root';
+    formData.append(
+      'folderStructure',
+      JSON.stringify([{ path: normalizedPath, name: normalizedPath, fileCount: files.length }]),
+    );
 
     files.forEach((file) => {
       formData.append(`folder_${normalizedPath}`, file);
@@ -302,15 +334,23 @@ export default function InserirProcessoPage() {
   };
 
   // Criar nova pasta principal ou subpasta
-  const createFolder = (parentId: string | null) => {
-    if (!newFolderName.trim()) {
+  const createFolder = (parentId: string | null, customName?: string) => {
+    const folderName = normalizeFolderSegment(customName ?? newFolderName);
+
+    if (!folderName) {
       setError('Digite um nome para a pasta');
+      return;
+    }
+
+    const siblings = parentId === null ? mainFolders : findFolderById(mainFolders, parentId)?.subfolders || [];
+    if (siblings.some((folder) => folder.name.toLowerCase() === folderName.toLowerCase())) {
+      setError(`Já existe uma pasta chamada "${folderName}" neste nível.`);
       return;
     }
 
     const newFolder: FolderConfig = {
       id: `folder-${Date.now()}-${Math.random()}`,
-      name: newFolderName.trim(),
+      name: folderName,
       files: [],
       subfolders: [],
       parentId: parentId || undefined
@@ -329,6 +369,65 @@ export default function InserirProcessoPage() {
 
     setNewFolderName('');
     setCreatingFolder(null);
+  };
+
+  const createFolderTreeFromPaths = () => {
+    const lines = bulkFoldersText
+      .split('\n')
+      .map((line) => sanitizeRelativePath(line))
+      .filter(Boolean);
+
+    if (!lines.length) {
+      setError('Informe ao menos um caminho de pasta para criar a estrutura.');
+      return;
+    }
+
+    setMainFolders((prevFolders) => {
+      let nextFolders = [...prevFolders];
+
+      const createNode = (name: string, parentId?: string): FolderConfig => ({
+        id: `folder-${Date.now()}-${Math.random()}`,
+        name,
+        files: [],
+        subfolders: [],
+        parentId,
+      });
+
+      for (const path of lines) {
+        const parts = path.split('/').filter(Boolean);
+        let parentId: string | null = null;
+
+        for (const part of parts) {
+          const siblings: FolderConfig[] = parentId === null
+            ? nextFolders
+            : findFolderById(nextFolders, parentId)?.subfolders || [];
+
+          const existing = siblings.find((folder) => folder.name.toLowerCase() === part.toLowerCase());
+          if (existing) {
+            parentId = existing.id;
+            continue;
+          }
+
+          const newNode = createNode(part, parentId || undefined);
+          if (parentId === null) {
+            nextFolders = [...nextFolders, newNode];
+          } else {
+            nextFolders = updateFolderInTree(nextFolders, parentId, (folder) => ({
+              ...folder,
+              subfolders: [...folder.subfolders, newNode],
+            }));
+          }
+
+          parentId = newNode.id;
+        }
+      }
+
+      return nextFolders;
+    });
+
+    setBulkFoldersText('');
+    setMessage('Estrutura de pastas criada com sucesso.');
+    setError('');
   };
 
   // Remover pasta
@@ -405,14 +504,13 @@ export default function InserirProcessoPage() {
   };
 
   // Função auxiliar para coletar estrutura de pastas em formato plano para envio
-  const flattenFolderStructure = (folder: FolderConfig, parentPath: string = ''): Array<{ path: string, name: string, files: File[] }> => {
-    const currentPath = parentPath ? `${parentPath}/${folder.name}` : folder.name;
-    const result: Array<{ path: string, name: string, files: File[] }> = [];
+  const flattenFolderStructure = (folder: FolderConfig, parentPath: string = ''): FlattenedFolder[] => {
+    const currentPath = sanitizeRelativePath(parentPath ? `${parentPath}/${folder.name}` : folder.name);
+    const result: FlattenedFolder[] = [];
     
     if (folder.files.length > 0 || folder.subfolders.length > 0) {
       result.push({
         path: currentPath,
-        name: folder.name,
         files: folder.files
       });
     }
@@ -525,12 +623,11 @@ export default function InserirProcessoPage() {
       const clientType = basePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
 
       // Coletar estrutura completa
-      const folderStructure: Array<{ path: string, name: string, files: File[] }> = [];
+      const folderStructure: FlattenedFolder[] = [];
 
       if (rootFiles.length > 0) {
         folderStructure.push({
           path: '',
-          name: '',
           files: rootFiles
         });
       }
@@ -539,17 +636,30 @@ export default function InserirProcessoPage() {
         folderStructure.push(...flattenFolderStructure(folder));
       });
 
+      const flattenedPaths = new Set<string>();
+      for (const folder of folderStructure) {
+        const normalizedPath = sanitizeRelativePath(folder.path || 'root') || 'root';
+        if (flattenedPaths.has(normalizedPath)) {
+          throw new Error(`Estrutura inválida: caminho duplicado detectado (${normalizedPath}).`);
+        }
+        flattenedPaths.add(normalizedPath);
+      }
+
       // Upload em lotes para evitar 413 (Request Entity Too Large)
       let totalUploadedFiles = 0;
+      let batchesCommitted = 0;
+      setUploadProgress({ done: 0, total: totalFiles, currentPath: '' });
       for (const folder of folderStructure) {
         if (!folder.files.length) continue;
 
-        const folderPath = folder.path || 'root';
+        const folderPath = sanitizeRelativePath(folder.path || 'root') || 'root';
+        setUploadProgress((prev) => ({ ...prev, currentPath: folderPath }));
         const formData = buildUploadFormData({
           processName,
           clientType,
           folderPath,
           files: folder.files,
+          forceUpload,
         });
 
         const controller = new AbortController();
@@ -574,6 +684,16 @@ export default function InserirProcessoPage() {
           );
         }
 
+        if (result.noCommit) {
+          const skippedThisBatch = Number(result?.totalArquivos ?? folder.files.length);
+          totalUploadedFiles += skippedThisBatch;
+          setUploadProgress((prev) => ({
+            ...prev,
+            done: Math.min(prev.done + skippedThisBatch, prev.total),
+          }));
+          continue;
+        }
+
         if (!result.githubSynced) {
           const errorMsg = result.githubError
             ? `Erro ao enviar para GitHub: ${result.githubError}`
@@ -588,13 +708,25 @@ export default function InserirProcessoPage() {
           return;
         }
 
-        totalUploadedFiles += Number(result?.totalArquivos || folder.files.length);
+        const uploadedThisBatch = Number(result?.totalArquivos || folder.files.length);
+        totalUploadedFiles += uploadedThisBatch;
+        batchesCommitted += 1;
+        setUploadProgress((prev) => ({
+          ...prev,
+          done: Math.min(prev.done + uploadedThisBatch, prev.total),
+        }));
       }
 
-      setMessage(
-        `Processo "${processName}" inserido com sucesso e sincronizado com GitHub! (${totalUploadedFiles} arquivo(s)) ` +
-        'Redirecionando para a página de processos...'
-      );
+      if (totalUploadedFiles !== totalFiles) {
+        throw new Error(`Inconsistência detectada no upload: esperado ${totalFiles}, enviado ${totalUploadedFiles}.`);
+      }
+
+      const successMessage =
+        batchesCommitted === 0
+          ? `Todos os arquivos já estavam iguais ao repositório. Nenhum commit necessário. (${totalUploadedFiles} arquivo(s) verificados.)`
+          : `Processo "${processName}" inserido com sucesso e sincronizado com GitHub! (${totalUploadedFiles} arquivo(s)) ` +
+            'Redirecionando para a página de processos...';
+      setMessage(successMessage);
 
       // Limpar formulário
       setRootFiles([]);
@@ -603,6 +735,7 @@ export default function InserirProcessoPage() {
       setBpmnXml(null);
       setNewFolderName('');
       setCreatingFolder(null);
+      setUploadProgress({ done: 0, total: 0, currentPath: '' });
 
       // Resetar inputs
       const fileInputs = document.querySelectorAll('input[type="file"]');
@@ -610,10 +743,12 @@ export default function InserirProcessoPage() {
         input.value = '';
       });
 
-      // Redirecionar para a página de processos após 2 segundos
-      setTimeout(() => {
-        window.location.href = `${basePath}/processos`;
-      }, 2000);
+      // Redirecionar para a página de processos após 2 segundos (apenas se houve commit)
+      if (batchesCommitted > 0) {
+        setTimeout(() => {
+          window.location.href = `${basePath}/processos`;
+        }, 2000);
+      }
     } catch (err: any) {
       console.error('Erro ao inserir processo:', err);
       if (err?.name === 'AbortError') {
@@ -625,6 +760,7 @@ export default function InserirProcessoPage() {
       } else {
         setError(err?.message || 'Erro ao inserir processo');
       }
+      setUploadProgress({ done: 0, total: 0, currentPath: '' });
     } finally {
       setLoading(false);
     }
@@ -720,6 +856,36 @@ export default function InserirProcessoPage() {
 
             {/* Formulário */}
             <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border p-8" style={{ borderColor: '#e5e7eb' }}>
+              {loading && uploadProgress.total > 0 && (
+                <div className="mb-6 p-4 rounded-lg border" style={{ borderColor: theme.colors.primary, backgroundColor: `${theme.colors.primary}10` }}>
+                  <p className="text-sm font-medium" style={{ color: theme.colors.text }}>
+                    Upload em andamento: {uploadProgress.done}/{uploadProgress.total} arquivo(s)
+                    {uploadProgress.currentPath ? ` • Pasta atual: ${uploadProgress.currentPath}` : ''}
+                  </p>
+                </div>
+              )}
+
+              <div className="mb-6 p-4 rounded-lg border" style={{ borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
+                <p className="text-sm font-semibold mb-2" style={{ color: theme.colors.text }}>Criação rápida de estrutura</p>
+                <p className="text-xs mb-2" style={{ color: '#606770' }}>Informe um caminho por linha (ex: ProcessoA/Subpasta1/Subpasta2)</p>
+                <textarea
+                  value={bulkFoldersText}
+                  onChange={(e) => setBulkFoldersText(e.target.value)}
+                  rows={4}
+                  className="w-full text-sm px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{ borderColor: '#d1d5db' }}
+                  placeholder={'ProcessoA\nProcessoA/Subpasta1\nProcessoA/Subpasta1/Subpasta2'}
+                />
+                <button
+                  type="button"
+                  onClick={createFolderTreeFromPaths}
+                  className="mt-3 px-4 py-2 text-white rounded-lg text-sm"
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  Criar árvore de pastas
+                </button>
+              </div>
+
               {/* Preview do Diagrama */}
               {showPreview && (
                 <div className="mb-6 border-2 rounded-lg overflow-hidden" style={{ borderColor: theme.colors.border }}>
@@ -1169,6 +1335,36 @@ export default function InserirProcessoPage() {
                 )}
               </div>
 
+              <div className="mt-6 p-4 border rounded-lg" style={{ borderColor: '#e5e7eb', backgroundColor: '#fafafa' }}>
+                <p className="text-sm font-semibold mb-2" style={{ color: theme.colors.text }}>Preview da estrutura para o GitHub</p>
+                <div className="space-y-1 max-h-36 overflow-auto text-xs" style={{ color: '#606770' }}>
+                  {rootFiles.map((file, idx) => (
+                    <div key={`preview-root-${idx}`}>{`(raiz do processo)/${file.name}`}</div>
+                  ))}
+                  {mainFolders.flatMap((folder) => flattenFolderStructure(folder)).flatMap((entry) =>
+                    entry.files.map((file, idx) => (
+                      <div key={`preview-folder-${entry.path}-${idx}`}>{`${entry.path}/${file.name}`}</div>
+                    )),
+                  )}
+                  {rootFiles.length === 0 && mainFolders.length === 0 && <div>Nenhum arquivo selecionado.</div>}
+                </div>
+              </div>
+
+              {/* Forçar envio: sempre fazer commit mesmo se os arquivos forem iguais ao repo */}
+              <div className="flex items-center gap-2 pt-3">
+                <input
+                  type="checkbox"
+                  id="forceUpload"
+                  checked={forceUpload}
+                  onChange={(e) => setForceUpload(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                  style={{ accentColor: theme.colors.primary }}
+                />
+                <label htmlFor="forceUpload" className="text-sm" style={{ color: theme.colors.text }}>
+                  Forçar envio (fazer commit mesmo se os arquivos forem iguais ao repositório)
+                </label>
+              </div>
+
               {/* Botões */}
               <div className="flex justify-center gap-3 pt-4">
                 <button
@@ -1212,7 +1408,7 @@ export default function InserirProcessoPage() {
                 </button>
 
                 <Link
-                  href="/processos"
+                  href={basePath ? `${basePath}/processos` : '/processos'}
                   className="px-8 py-3 rounded-lg font-medium transition-all duration-200 text-center inline-flex items-center gap-2"
                   style={{
                     backgroundColor: 'transparent',

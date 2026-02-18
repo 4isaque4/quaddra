@@ -1,337 +1,417 @@
-import { NextResponse } from 'next/server';
-import { Octokit } from '@octokit/rest';
-import { existsSync, mkdirSync, rmSync, renameSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { NextResponse } from 'next/server'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
+import { join } from 'path'
+import {
+  GITHUB_BRANCH,
+  GITHUB_OWNER,
+  GITHUB_REPO_QUADDRA,
+  GITHUB_REPO_VALESHOP,
+  GITHUB_TOKEN,
+  octokit,
+  withRetry,
+} from '@/lib/process-storage'
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4';
-const GITHUB_REPO = process.env.GITHUB_REPO_PROCESSOS || process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos';
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+type ClientType = 'quaddra' | 'valeshop'
 
-const octokit = new Octokit({ auth: GITHUB_TOKEN });
+type ManageFolderPayload = {
+  action?: 'create' | 'rename' | 'delete'
+  folderPath?: string
+  newName?: string
+  parentPath?: string | null
+  clientType?: ClientType
+}
+
+function sanitizePath(value: string | null | undefined): string {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/g, '')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/g, '')
+}
+
+function resolveRepo(clientType?: string): string {
+  return String(clientType || '').toLowerCase() === 'valeshop' ? GITHUB_REPO_VALESHOP : GITHUB_REPO_QUADDRA
+}
+
+function isNotFastForward(err: any): boolean {
+  return (
+    err?.status === 422
+    && (String(err?.message || '').includes('fast forward')
+      || String(err?.response?.data?.message || '').includes('fast forward'))
+  )
+}
+
+async function createFolderInGithub(repo: string, folderPath: string) {
+  const keepPath = `${folderPath}/.gitkeep`
+  const keepContent = `# pasta criada automaticamente: ${folderPath}\n`
+  const maxUpdateAttempts = 3
+
+  for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
+    const { data: refData } = await withRetry(
+      () => octokit!.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+      `manage-folder:create:getRef:${repo}`,
+    )
+
+    const baseSha = refData.object.sha
+
+    const { data: commitData } = await withRetry(
+      () => octokit!.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: baseSha }),
+      `manage-folder:create:getCommit:${repo}`,
+    )
+
+    const { data: blobData } = await withRetry(
+      () =>
+        octokit!.git.createBlob({
+          owner: GITHUB_OWNER,
+          repo,
+          content: keepContent,
+          encoding: 'utf-8',
+        }),
+      `manage-folder:create:createBlob:${repo}`,
+    )
+
+    const { data: newTree } = await withRetry(
+      () =>
+        octokit!.git.createTree({
+          owner: GITHUB_OWNER,
+          repo,
+          base_tree: commitData.tree.sha,
+          tree: [
+            {
+              path: keepPath,
+              mode: '100644',
+              type: 'blob',
+              sha: blobData.sha,
+            },
+          ],
+        }),
+      `manage-folder:create:createTree:${repo}`,
+    )
+
+    const { data: newCommit } = await withRetry(
+      () =>
+        octokit!.git.createCommit({
+          owner: GITHUB_OWNER,
+          repo,
+          message: `chore: criar pasta ${folderPath}`,
+          tree: newTree.sha,
+          parents: [baseSha],
+        }),
+      `manage-folder:create:createCommit:${repo}`,
+    )
+
+    try {
+      await octokit!.git.updateRef({
+        owner: GITHUB_OWNER,
+        repo,
+        ref: `heads/${GITHUB_BRANCH}`,
+        sha: newCommit.sha,
+      })
+      return
+    } catch (err: any) {
+      if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue
+      throw err
+    }
+  }
+}
 
 export async function POST(request: Request) {
   try {
-    const { action, folderPath, newName, parentPath } = await request.json();
+    const payload = (await request.json()) as ManageFolderPayload
+    const action = payload.action
+    const folderPath = sanitizePath(payload.folderPath)
+    const parentPath = sanitizePath(payload.parentPath)
+    const newName = String(payload.newName || '').trim()
+    const repo = resolveRepo(payload.clientType)
 
     if (!action) {
-      return NextResponse.json({ error: 'Ação é obrigatória' }, { status: 400 });
+      return NextResponse.json({ error: 'Ação é obrigatória' }, { status: 400 })
     }
 
-    // Para criar pasta, folderPath pode ser vazio ou null
     if (action !== 'create' && !folderPath) {
-      return NextResponse.json({ error: 'Caminho da pasta é obrigatório para esta ação' }, { status: 400 });
+      return NextResponse.json({ error: 'Caminho da pasta é obrigatório para esta ação' }, { status: 400 })
     }
 
-    if (!GITHUB_TOKEN) {
-      return NextResponse.json({ error: 'GITHUB_TOKEN não configurado' }, { status: 500 });
+    if (!GITHUB_TOKEN || !octokit) {
+      return NextResponse.json({ error: 'GITHUB_TOKEN não configurado' }, { status: 500 })
     }
 
-    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn');
-    const fullFolderPath = folderPath ? join(bpmnDir, folderPath) : null;
+    const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
+    const fullFolderPath = folderPath ? join(bpmnDir, folderPath) : null
 
     switch (action) {
       case 'create': {
         if (!newName) {
-          return NextResponse.json({ error: 'Nome da pasta é obrigatório para criar' }, { status: 400 });
+          return NextResponse.json({ error: 'Nome da pasta é obrigatório para criar' }, { status: 400 })
         }
 
-        const newFolderPath = parentPath ? `${parentPath}/${newName}` : newName;
+        const cleanNewName = sanitizePath(newName).split('/').pop() || ''
+        if (!cleanNewName) {
+          return NextResponse.json({ error: 'Nome de pasta inválido' }, { status: 400 })
+        }
 
-        // Verificar se já existe no GitHub
+        const newFolderPath = parentPath ? `${parentPath}/${cleanNewName}` : cleanNewName
+
         try {
-          const { data: refData } = await octokit.git.getRef({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            ref: `heads/${GITHUB_BRANCH}`
-          });
+          const { data: refData } = await withRetry(
+            () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+            `manage-folder:create:checkRef:${repo}`,
+          )
 
-          const { data: currentTree } = await octokit.git.getTree({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            tree_sha: refData.object.sha,
-            recursive: 'true'
-          });
+          const { data: currentTree } = await withRetry(
+            () =>
+              octokit.git.getTree({
+                owner: GITHUB_OWNER,
+                repo,
+                tree_sha: refData.object.sha,
+                recursive: 'true',
+              }),
+            `manage-folder:create:checkTree:${repo}`,
+          )
 
-          const folderExists = currentTree.tree.some(item => 
-            item.path && (item.path === newFolderPath || item.path.startsWith(newFolderPath + '/'))
-          );
+          const folderExists = (currentTree.tree || []).some(
+            (item) => item.path && (item.path === newFolderPath || item.path.startsWith(`${newFolderPath}/`)),
+          )
 
           if (folderExists) {
-            return NextResponse.json({ error: 'Pasta já existe' }, { status: 400 });
+            return NextResponse.json({ error: 'Pasta já existe' }, { status: 400 })
           }
         } catch (error: any) {
-          console.warn('[FOLDER] Erro ao verificar pasta no GitHub:', error.message);
+          if (error?.status === 404) {
+            return NextResponse.json({ error: 'Repositório ou branch não encontrado' }, { status: 404 })
+          }
+          return NextResponse.json({ error: 'Erro ao validar pasta no GitHub', details: error?.message }, { status: 500 })
         }
 
-        // Criar localmente se o diretório existir
         if (existsSync(bpmnDir)) {
-          const localParentDir = parentPath ? join(bpmnDir, parentPath) : bpmnDir;
-          const localNewFolderPath = join(localParentDir, newName);
-          
+          const localParentDir = parentPath ? join(bpmnDir, parentPath) : bpmnDir
+          const localNewFolderPath = join(localParentDir, cleanNewName)
           if (!existsSync(localNewFolderPath)) {
-            mkdirSync(localNewFolderPath, { recursive: true });
-            console.log('[FOLDER] Pasta criada localmente:', localNewFolderPath);
+            mkdirSync(localNewFolderPath, { recursive: true })
           }
         }
 
-        // No GitHub, pastas são criadas automaticamente quando arquivos são adicionados
-        return NextResponse.json({ 
-          success: true, 
+        await createFolderInGithub(repo, newFolderPath)
+
+        return NextResponse.json({
+          success: true,
+          githubSynced: true,
           message: 'Pasta criada com sucesso',
-          path: newFolderPath
-        });
+          path: newFolderPath,
+          repo,
+        })
       }
 
       case 'rename': {
         if (!newName) {
-          return NextResponse.json({ error: 'Novo nome da pasta é obrigatório' }, { status: 400 });
+          return NextResponse.json({ error: 'Novo nome da pasta é obrigatório' }, { status: 400 })
         }
 
-        // Buscar pasta no GitHub primeiro
-        let folderExistsInGitHub = false;
-        try {
-          const { data: refData } = await octokit.git.getRef({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            ref: `heads/${GITHUB_BRANCH}`
-          });
+        const { data: refData } = await withRetry(
+          () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+          `manage-folder:rename:getRef:${repo}`,
+        )
 
-          const { data: currentTree } = await octokit.git.getTree({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            tree_sha: refData.object.sha,
-            recursive: 'true'
-          });
+        const { data: commitData } = await withRetry(
+          () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: refData.object.sha }),
+          `manage-folder:rename:getCommit:${repo}`,
+        )
 
-          folderExistsInGitHub = currentTree.tree.some(item => 
-            item.path && item.path.startsWith(folderPath + '/')
-          );
+        const { data: currentTree } = await withRetry(
+          () => octokit.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: commitData.tree.sha, recursive: 'true' }),
+          `manage-folder:rename:getTree:${repo}`,
+        )
 
-          if (!folderExistsInGitHub) {
-            return NextResponse.json({ error: 'Pasta não encontrada no GitHub' }, { status: 404 });
-          }
-
-          // Verificar se novo nome já existe
-          const parentPath = folderPath.includes('/') 
-            ? folderPath.substring(0, folderPath.lastIndexOf('/'))
-            : '';
-          const newFolderPath = parentPath ? `${parentPath}/${newName}` : newName;
-          
-          const newFolderExists = currentTree.tree.some(item => 
-            item.path && (item.path === newFolderPath || item.path.startsWith(newFolderPath + '/'))
-          );
-
-          if (newFolderExists) {
-            return NextResponse.json({ error: 'Já existe uma pasta com este nome' }, { status: 400 });
-          }
-        } catch (error: any) {
-          console.error('[FOLDER] Erro ao verificar pasta no GitHub:', error);
-          return NextResponse.json({ error: 'Erro ao verificar pasta no GitHub', details: error.message }, { status: 500 });
+        const hasFolder = (currentTree.tree || []).some((item) => item.path?.startsWith(`${folderPath}/`))
+        if (!hasFolder) {
+          return NextResponse.json({ error: 'Pasta não encontrada no GitHub' }, { status: 404 })
         }
 
-        // Renomear localmente se existir
+        const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : ''
+        const targetFolderPath = parentDir ? `${parentDir}/${newName}` : newName
+        const targetExists = (currentTree.tree || []).some(
+          (item) => item.path && (item.path === targetFolderPath || item.path.startsWith(`${targetFolderPath}/`)),
+        )
+
+        if (targetExists) {
+          return NextResponse.json({ error: 'Já existe uma pasta com este nome' }, { status: 400 })
+        }
+
         if (fullFolderPath && existsSync(fullFolderPath)) {
-          const parentDir = join(fullFolderPath, '..');
-          const localNewFolderPath = join(parentDir, newName);
-          
-          if (!existsSync(localNewFolderPath)) {
-            renameSync(fullFolderPath, localNewFolderPath);
-            console.log('[FOLDER] Pasta renomeada localmente de', fullFolderPath, 'para', localNewFolderPath);
+          const localParent = join(fullFolderPath, '..')
+          const localTarget = join(localParent, newName)
+          if (!existsSync(localTarget)) {
+            renameSync(fullFolderPath, localTarget)
           }
         }
 
-        // Sincronizar com GitHub
-        try {
-          // Obter referência do branch
-          const { data: refData } = await octokit.git.getRef({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            ref: `heads/${GITHUB_BRANCH}`
-          });
+        const filesToMove = (currentTree.tree || []).filter(
+          (item) => item.type === 'blob' && item.path && item.path.startsWith(`${folderPath}/`),
+        )
 
-          const latestCommitSha = refData.object.sha;
+        const maxUpdateAttempts = 3
+        for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
+          const { data: latestRef } = await withRetry(
+            () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+            `manage-folder:rename:loopRef:${repo}`,
+          )
+          const latestSha = latestRef.object.sha
 
-          // Obter árvore do commit
-          const { data: commitData } = await octokit.git.getCommit({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            commit_sha: latestCommitSha
-          });
+          const { data: latestCommit } = await withRetry(
+            () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
+            `manage-folder:rename:loopCommit:${repo}`,
+          )
 
-          const baseTreeSha = commitData.tree.sha;
+          const treeItems: Array<{ path: string; mode: '100644'; type: 'blob'; sha: string | null }> = []
+          for (const file of filesToMove) {
+            const oldPath = file.path!
+            const relative = oldPath.slice(folderPath.length + 1)
+            const newPath = `${targetFolderPath}/${relative}`
 
-          // Obter árvore completa recursivamente
-          const { data: currentTree } = await octokit.git.getTree({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            tree_sha: baseTreeSha,
-            recursive: 'true'
-          });
+            const { data: fileData } = await withRetry(
+              () => octokit.repos.getContent({ owner: GITHUB_OWNER, repo, path: oldPath, ref: GITHUB_BRANCH }),
+              `manage-folder:rename:getContent:${repo}`,
+            )
 
-          // Encontrar todos os arquivos na pasta antiga
-          const filesToMove: Array<{ oldPath: string, newPath: string, content: string, sha: string }> = [];
+            if (!('content' in fileData) || !fileData.content) continue
+            const content = Buffer.from(fileData.content, 'base64').toString('utf-8')
 
-          for (const item of currentTree.tree || []) {
-            if (item.type === 'blob' && item.path && item.path.startsWith(folderPath + '/')) {
-              const relativePath = item.path.substring(folderPath.length + 1);
-              const newPath = folderPath.includes('/') 
-                ? `${folderPath.substring(0, folderPath.lastIndexOf('/'))}/${newName}/${relativePath}`
-                : `${newName}/${relativePath}`;
+            const { data: blob } = await withRetry(
+              () => octokit.git.createBlob({ owner: GITHUB_OWNER, repo, content, encoding: 'utf-8' }),
+              `manage-folder:rename:createBlob:${repo}`,
+            )
 
-              try {
-                const { data: fileData } = await octokit.repos.getContent({
-                  owner: GITHUB_OWNER,
-                  repo: GITHUB_REPO,
-                  path: item.path,
-                  ref: GITHUB_BRANCH
-                });
-
-                if ('content' in fileData && fileData.content) {
-                  const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-                  filesToMove.push({
-                    oldPath: item.path,
-                    newPath,
-                    content,
-                    sha: item.sha!
-                  });
-                }
-              } catch (error) {
-                console.warn('[FOLDER] Erro ao buscar arquivo do GitHub:', item.path);
-              }
-            }
+            treeItems.push({ path: newPath, mode: '100644', type: 'blob', sha: blob.sha })
           }
 
-          // Criar novos arquivos e remover antigos
-          const newBlobs = await Promise.all(
-            filesToMove.map(async (fileInfo) => {
-              const { data: blob } = await octokit.git.createBlob({
+          for (const file of filesToMove) {
+            treeItems.push({ path: file.path!, mode: '100644', type: 'blob', sha: null })
+          }
+
+          const { data: newTree } = await withRetry(
+            () =>
+              octokit.git.createTree({
                 owner: GITHUB_OWNER,
-                repo: GITHUB_REPO,
-                content: fileInfo.content,
-                encoding: 'utf-8'
-              });
-              return {
-                path: fileInfo.newPath,
-                mode: '100644' as const,
-                type: 'blob' as const,
-                sha: blob.sha
-              };
-            })
-          );
+                repo,
+                base_tree: latestCommit.tree.sha,
+                tree: treeItems,
+              }),
+            `manage-folder:rename:createTree:${repo}`,
+          )
 
-          const updatedTree = currentTree.tree
-            .filter(item => !item.path?.startsWith(folderPath + '/'))
-            .map(item => ({
-              path: item.path!,
-              mode: item.mode as '100644' | '100755' | '040000' | '160000' | '120000',
-              type: item.type as 'blob' | 'tree' | 'commit',
-              sha: item.sha!
-            }));
+          const { data: newCommit } = await withRetry(
+            () =>
+              octokit.git.createCommit({
+                owner: GITHUB_OWNER,
+                repo,
+                message: `chore: renomear pasta ${folderPath} para ${newName}`,
+                tree: newTree.sha,
+                parents: [latestSha],
+              }),
+            `manage-folder:rename:createCommit:${repo}`,
+          )
 
-          updatedTree.push(...newBlobs);
-
-          // Criar nova árvore
-          const { data: newTreeData } = await octokit.git.createTree({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            tree: updatedTree,
-            base_tree: baseTreeSha
-          });
-
-          // Criar commit
-          const { data: newCommit } = await octokit.git.createCommit({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            message: `chore: renomear pasta ${folderPath} para ${newName}`,
-            tree: newTreeData.sha,
-            parents: [latestCommitSha]
-          });
-
-          // Atualizar referência
-          await octokit.git.updateRef({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            ref: `heads/${GITHUB_BRANCH}`,
-            sha: newCommit.sha
-          });
-
-          console.log('[FOLDER] Pasta renomeada no GitHub com sucesso');
-        } catch (githubError: any) {
-          console.error('[FOLDER] Erro ao renomear no GitHub:', githubError);
+          try {
+            await octokit.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
+            break
+          } catch (err: any) {
+            if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue
+            throw err
+          }
         }
 
-        return NextResponse.json({ 
-          success: true, 
+        return NextResponse.json({
+          success: true,
           message: 'Pasta renomeada com sucesso',
-          newPath: folderPath.includes('/') 
-            ? `${folderPath.substring(0, folderPath.lastIndexOf('/'))}/${newName}`
-            : newName
-        });
+          newPath: targetFolderPath,
+          repo,
+        })
       }
 
       case 'delete': {
-        // Verificar no GitHub se a pasta está vazia
-        try {
-          const { data: refData } = await octokit.git.getRef({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            ref: `heads/${GITHUB_BRANCH}`
-          });
+        const { data: refData } = await withRetry(
+          () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+          `manage-folder:delete:getRef:${repo}`,
+        )
 
-          const { data: currentTree } = await octokit.git.getTree({
-            owner: GITHUB_OWNER,
-            repo: GITHUB_REPO,
-            tree_sha: refData.object.sha,
-            recursive: 'true'
-          });
+        const { data: currentTree } = await withRetry(
+          () => octokit.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: refData.object.sha, recursive: 'true' }),
+          `manage-folder:delete:getTree:${repo}`,
+        )
 
-          const folderFiles = currentTree.tree.filter(item => 
-            item.path && item.path.startsWith(folderPath + '/')
-          );
+        const folderFiles = (currentTree.tree || []).filter((item) => item.path?.startsWith(`${folderPath}/`))
+        const meaningfulFiles = folderFiles.filter((item) => item.path && !item.path.endsWith('/.gitkeep'))
 
-          if (folderFiles.length > 0) {
-            return NextResponse.json({ 
-              error: 'Pasta não está vazia. Remova os processos antes de deletar a pasta.' 
-            }, { status: 400 });
-          }
-        } catch (error: any) {
-          console.error('[FOLDER] Erro ao verificar pasta no GitHub:', error);
-          return NextResponse.json({ 
-            error: 'Erro ao verificar pasta no GitHub', 
-            details: error.message 
-          }, { status: 500 });
+        if (meaningfulFiles.length > 0) {
+          return NextResponse.json(
+            { error: 'Pasta não está vazia. Remova os processos antes de deletar a pasta.' },
+            { status: 400 },
+          )
         }
 
-        // Deletar localmente se existir
-        if (fullFolderPath && existsSync(fullFolderPath)) {
-          try {
-            const contents = readdirSync(fullFolderPath);
-            if (contents.length === 0) {
-              rmSync(fullFolderPath, { recursive: true, force: true });
-              console.log('[FOLDER] Pasta deletada localmente:', fullFolderPath);
+        const gitkeep = folderFiles.find((item) => item.path === `${folderPath}/.gitkeep`)
+        if (gitkeep) {
+          const maxUpdateAttempts = 3
+          for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
+            const { data: latestRef } = await withRetry(
+              () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+              `manage-folder:delete:loopRef:${repo}`,
+            )
+            const latestSha = latestRef.object.sha
+
+            const { data: latestCommit } = await withRetry(
+              () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
+              `manage-folder:delete:loopCommit:${repo}`,
+            )
+
+            const { data: newTree } = await withRetry(
+              () =>
+                octokit.git.createTree({
+                  owner: GITHUB_OWNER,
+                  repo,
+                  base_tree: latestCommit.tree.sha,
+                  tree: [{ path: `${folderPath}/.gitkeep`, mode: '100644', type: 'blob', sha: null }],
+                }),
+              `manage-folder:delete:createTree:${repo}`,
+            )
+
+            const { data: newCommit } = await withRetry(
+              () =>
+                octokit.git.createCommit({
+                  owner: GITHUB_OWNER,
+                  repo,
+                  message: `chore: deletar pasta ${folderPath}`,
+                  tree: newTree.sha,
+                  parents: [latestSha],
+                }),
+              `manage-folder:delete:createCommit:${repo}`,
+            )
+
+            try {
+              await octokit.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
+              break
+            } catch (err: any) {
+              if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue
+              throw err
             }
-          } catch (e) {
-            // Ignorar erros locais
           }
         }
 
-        // No GitHub, pastas vazias não precisam ser deletadas explicitamente
-        return NextResponse.json({ 
-          success: true, 
-          message: 'Pasta deletada com sucesso'
-        });
+        if (fullFolderPath && existsSync(fullFolderPath)) {
+          const contents = readdirSync(fullFolderPath)
+          if (contents.length === 0) {
+            rmSync(fullFolderPath, { recursive: true, force: true })
+          }
+        }
+
+        return NextResponse.json({ success: true, message: 'Pasta deletada com sucesso', repo })
       }
 
       default:
-        return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });
+        return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
     }
-
   } catch (error: any) {
-    console.error('[FOLDER] Erro:', error);
-    return NextResponse.json({ 
-      error: 'Erro ao gerenciar pasta', 
-      details: error.message 
-    }, { status: 500 });
+    console.error('[FOLDER] Erro:', error)
+    return NextResponse.json({ error: 'Erro ao gerenciar pasta', details: error?.message }, { status: 500 })
   }
 }

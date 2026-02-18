@@ -13,6 +13,10 @@ function normalizeSlug(text: string): string {
     .toLowerCase()
 }
 
+function slugCollapseDashes(s: string): string {
+  return s.replace(/-+/g, '-').replace(/^-|-$/g, '')
+}
+
 function getAllContentFiles(dir: string, baseDir: string, fileList: Array<{ path: string, name: string }> = []) {
   const files = readdirSync(dir)
 
@@ -45,9 +49,10 @@ export async function GET(
 
     const files = getAllContentFiles(contentDir, contentDir)
 
+    const collapsedSlug = slugCollapseDashes(normalizedSlug)
     const matchingFile = files.find(({ path }) => {
       const fileSlug = normalizeSlug(path.replace(/\.json$/i, ''))
-      return fileSlug === normalizedSlug
+      return fileSlug === normalizedSlug || slugCollapseDashes(fileSlug) === collapsedSlug
     })
 
     if (!matchingFile) {
