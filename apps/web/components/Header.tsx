@@ -23,16 +23,33 @@ export default function Header() {
   return (
     <header
       className="fixed top-0 left-0 w-full z-50 h-24 shadow-sm"
-      style={{ backgroundColor: isValeShop ? '#005EA8' : '#fff' }}
+      style={{
+        backgroundColor: isValeShop ? 'var(--header-bg, #005EA8)' : '#fff',
+        color: isValeShop ? 'var(--header-fg, #FFFFFF)' : undefined,
+      }}
     >
       {isValeShop && (
-        <style dangerouslySetInnerHTML={{ __html: `.nav-link::after { display: none !important; }` }} />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: [
+              `:root { --header-bg: #005EA8; --header-fg: #FFFFFF; }`,
+              `.nav-link::after { display: none !important; }`,
+            ].join('\n'),
+          }}
+        />
       )}
 
       <nav className="container flex justify-between items-center h-full">
         <Link href={isValeShop ? '/vale-shop/processos' : '/'} className="logo" onClick={closeMenu}>
           {isValeShop ? (
-            <Image src="/valeshop-logo.png" alt="ValeShop" width={180} height={60} priority style={{ height: 'auto', width: '180px' }} />
+            <Image
+              src="/valeshop-logo.svg"
+              alt="Vale Shop"
+              width={220}
+              height={74}
+              priority
+              style={{ height: 'auto', width: '220px' }}
+            />
           ) : (
             <Image src="/logo.png" alt="Quaddra" width={1200} height={300} priority style={{ height: '200px', width: 'auto' }} />
           )}
@@ -40,7 +57,7 @@ export default function Header() {
 
         <ul
           className={`nav-links ${isMenuOpen ? 'left-0' : '-left-full'} lg:static lg:flex lg:flex-row lg:bg-transparent lg:shadow-none lg:h-auto lg:w-auto lg:gap-6`}
-          style={{ backgroundColor: isValeShop ? '#005EA8' : undefined }}
+          style={{ backgroundColor: isValeShop ? 'var(--header-bg, #005EA8)' : undefined, color: isValeShop ? 'var(--header-fg)' : undefined }}
         >
           {isValeShop ? (
             <>
@@ -52,7 +69,7 @@ export default function Header() {
                       href={item.href as '/' | '/vale-shop/processos' | '/vale-shop/processos/inserir'}
                       className="nav-link flex items-center gap-1"
                       onClick={closeMenu}
-                      style={{ color: '#fff', borderBottom: active ? '2px solid #FFD24A' : 'none' }}
+                      style={{ color: 'var(--header-fg, #fff)', borderBottom: active ? '2px solid #FFD24A' : 'none' }}
                     >
                       <span>{item.label}</span>
                       {item.href !== '/' && <ChevronDown className="w-3 h-3 opacity-80" />}
@@ -66,7 +83,7 @@ export default function Header() {
                 </span>
               </li>
               <li>
-                <button type="button" className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/80 text-white">
+                <button type="button" className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/80 text-white" style={{ color: 'var(--header-fg)' }}>
                   <Search className="w-4 h-4" />
                 </button>
               </li>
@@ -83,9 +100,9 @@ export default function Header() {
         </ul>
 
         <button className="lg:hidden menu-toggle z-50" onClick={toggleMenu} aria-label="Abrir menu">
-          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
-          <span className={`block w-6 h-0.5 my-1.5 transition-all duration-300 ${isMenuOpen ? 'opacity-0' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
-          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? '#fff' : '#1f2937' }}></span>
+          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? 'var(--header-fg)' : '#1f2937' }}></span>
+          <span className={`block w-6 h-0.5 my-1.5 transition-all duration-300 ${isMenuOpen ? 'opacity-0' : ''}`} style={{ backgroundColor: isValeShop ? 'var(--header-fg)' : '#1f2937' }}></span>
+          <span className={`block w-6 h-0.5 transition-all duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} style={{ backgroundColor: isValeShop ? 'var(--header-fg)' : '#1f2937' }}></span>
         </button>
       </nav>
     </header>

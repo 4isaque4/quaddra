@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Folder, FolderPlus, FileText, GripVertical, X, Edit2, Trash2, Plus, Upload } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Folder, FolderPlus, FileText, GripVertical, X, Edit2, Trash2, Plus, Upload, ArrowUp, ArrowDown } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
+
+const ORDER_STORAGE_KEY_PREFIX = 'quaddra_organize_order_';
 
 interface ProcessoItem {
   file: string;
@@ -41,7 +43,25 @@ export default function ProcessOrganizationModal({
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState<string | null>(null);
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro', mensagem: string } | null>(null);
+  const [folderOrderMap, setFolderOrderMap] = useState<Record<string, string[]>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // Carregar ordem salva ao abrir o modal
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const key = `${ORDER_STORAGE_KEY_PREFIX}${clientType}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, string[]>;
+        setFolderOrderMap(parsed);
+      } else {
+        setFolderOrderMap({});
+      }
+    } catch {
+      setFolderOrderMap({});
+    }
+  }, [isOpen, clientType]);
 
   const sanitizeRelativePath = (value: string): string =>
     String(value || '')
@@ -159,6 +179,59 @@ export default function ProcessOrganizationModal({
     return () => { cancelled = true; };
   }, [processos, isOpen, clientType]);
 
+  // Ordenar pastas por ordem salva (acima/abaixo entre irmãos)
+  function getSiblingPaths(struct: FolderNode[], parentPath: string): string[] {
+    if (parentPath === '') return struct.filter((f) => f.path !== '').map((f) => f.path);
+    for (const node of struct) {
+      if (node.path === parentPath) return node.subfolders.map((s) => s.path);
+      const found = getSiblingPaths(node.subfolders, parentPath);
+      if (found.length > 0) return found;
+    }
+    return [];
+  }
+
+  const sortedFolderStructure = useMemo(() => {
+    function applyOrder(folders: FolderNode[], parentPath: string, orderMap: Record<string, string[]>): FolderNode[] {
+      const order = orderMap[parentPath] || folders.map((f) => f.path);
+      const sorted = [...folders].sort((a, b) => {
+        const ia = order.indexOf(a.path);
+        const ib = order.indexOf(b.path);
+        const i1 = ia === -1 ? 9999 : ia;
+        const i2 = ib === -1 ? 9999 : ib;
+        return i1 - i2;
+      });
+      return sorted.map((f) => ({ ...f, subfolders: applyOrder(f.subfolders, f.path, orderMap) }));
+    }
+    return applyOrder(folderStructure, '', folderOrderMap);
+  }, [folderStructure, folderOrderMap]);
+
+  const persistFolderOrder = (nextMap: Record<string, string[]>) => {
+    setFolderOrderMap(nextMap);
+    try {
+      localStorage.setItem(`${ORDER_STORAGE_KEY_PREFIX}${clientType}`, JSON.stringify(nextMap));
+    } catch (e) {
+      console.warn('Erro ao salvar ordem:', e);
+    }
+  };
+
+  const moveFolderUp = (parentPath: string, folderPath: string) => {
+    const siblings = folderOrderMap[parentPath] ?? getSiblingPaths(folderStructure, parentPath);
+    const idx = siblings.indexOf(folderPath);
+    if (idx <= 0) return;
+    const next = [...siblings];
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    persistFolderOrder({ ...folderOrderMap, [parentPath]: next });
+  };
+
+  const moveFolderDown = (parentPath: string, folderPath: string) => {
+    const siblings = folderOrderMap[parentPath] ?? getSiblingPaths(folderStructure, parentPath);
+    const idx = siblings.indexOf(folderPath);
+    if (idx < 0 || idx >= siblings.length - 1) return;
+    const next = [...siblings];
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    persistFolderOrder({ ...folderOrderMap, [parentPath]: next });
+  };
+
   const mostrarNotificacao = (tipo: 'sucesso' | 'erro', mensagem: string) => {
     setNotificacao({ tipo, mensagem });
     setTimeout(() => setNotificacao(null), 3000);
@@ -167,6 +240,15 @@ export default function ProcessOrganizationModal({
   const handleDragStart = (e: React.DragEvent, type: 'process' | 'folder', item: ProcessoItem | FolderNode) => {
     setDraggedItem({ type, item });
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('type', type);
+    if (type === 'folder') {
+      e.dataTransfer.setData('folderPath', (item as FolderNode).path);
+      e.dataTransfer.setData('text/plain', (item as FolderNode).path);
+    }
+    if (type === 'process') {
+      e.dataTransfer.setData('processSlug', (item as ProcessoItem).slug);
+      e.dataTransfer.setData('text/plain', (item as ProcessoItem).slug);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -178,17 +260,54 @@ export default function ProcessOrganizationModal({
     if (!draggedItem) return;
 
     try {
+      if (draggedItem.type === 'folder') {
+        const folder = draggedItem.item as FolderNode;
+        const sourcePath = folder.path;
+
+        if (targetFolderPath === sourcePath) {
+          mostrarNotificacao('erro', 'Não é possível mover uma pasta para si mesma.');
+          setDraggedItem(null);
+          return;
+        }
+        if (targetFolderPath && targetFolderPath.startsWith(sourcePath + '/')) {
+          mostrarNotificacao('erro', 'Não é possível mover uma pasta para dentro de uma subpasta sua.');
+          setDraggedItem(null);
+          return;
+        }
+
+        const response = await fetch('/api/manage-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'move',
+            folderPath: sourcePath,
+            targetParentPath: targetFolderPath || null,
+            clientType,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          const targetMsg = targetFolderPath ? `para a pasta "${targetFolderPath}"` : 'para a raiz';
+          mostrarNotificacao('sucesso', `Pasta "${folder.name}" movida com sucesso ${targetMsg}!`);
+          setTimeout(() => onUpdate(), 1000);
+        } else {
+          mostrarNotificacao('erro', data.error || 'Erro ao mover pasta.');
+        }
+      }
+
       if (draggedItem.type === 'process') {
         const processo = draggedItem.item as ProcessoItem;
-        
+
         const response = await fetch('/api/move-processo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             processSlug: processo.slug,
             targetFolderPath: targetFolderPath || null,
-            clientType: clientType
-          })
+            clientType,
+          }),
         });
 
         const data = await response.json();
@@ -196,10 +315,7 @@ export default function ProcessOrganizationModal({
         if (response.ok && data.success) {
           const targetMsg = targetFolderPath ? `para a pasta "${targetFolderPath}"` : 'para a raiz';
           mostrarNotificacao('sucesso', `Processo "${processo.nome}" movido com sucesso ${targetMsg}!`);
-          // Aguardar um pouco antes de atualizar para dar tempo do GitHub processar
-          setTimeout(() => {
-            onUpdate();
-          }, 1000);
+          setTimeout(() => onUpdate(), 1000);
         } else {
           const errorMsg = data.error || data.details || 'Erro ao mover processo';
           mostrarNotificacao('erro', `Erro ao mover processo: ${errorMsg}`);
@@ -361,10 +477,18 @@ export default function ProcessOrganizationModal({
     }
   };
 
-  const renderFolder = (folder: FolderNode, level: number = 0): JSX.Element => {
+  const renderFolder = (
+    folder: FolderNode,
+    level: number = 0,
+    siblingIndex: number = 0,
+    siblingCount: number = 1,
+  ): JSX.Element => {
     const isRoot = folder.path === '';
     const indent = level * 24;
     const isCreatingHere = creatingFolder === folder.path;
+    const parentPath = folder.path.includes('/') ? folder.path.split('/').slice(0, -1).join('/') : '';
+    const canMoveUp = !isRoot && siblingCount > 1 && siblingIndex > 0;
+    const canMoveDown = !isRoot && siblingCount > 1 && siblingIndex < siblingCount - 1;
 
     return (
       <div key={folder.path || 'root'} className="mb-4 relative">
@@ -382,6 +506,26 @@ export default function ProcessOrganizationModal({
             handleDrop(folder.path || null);
           }}
         >
+          {/* Handle para arrastar pasta — igual ao dos processos; arraste por aqui para mover a pasta */}
+          {!isRoot && editingFolder?.path !== folder.path ? (
+            <div
+              role="button"
+              tabIndex={0}
+              draggable
+              onDragStart={(e) => handleDragStart(e, 'folder', folder)}
+              className="cursor-grab active:cursor-grabbing shrink-0 p-1.5 rounded border border-transparent hover:border-gray-300 hover:bg-gray-100 select-none"
+              style={{ color: theme.colors.primary }}
+              title="Arrastar pasta para mover"
+              aria-label="Arrastar pasta"
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') e.preventDefault();
+              }}
+            >
+              <GripVertical className="w-5 h-5" style={{ color: theme.colors.primary }} />
+            </div>
+          ) : (
+            <span className="w-8 shrink-0 block" aria-hidden />
+          )}
           <Folder className="w-5 h-5 shrink-0" style={{ color: theme.colors.primary }} />
           
           {editingFolder?.path === folder.path ? (
@@ -422,6 +566,29 @@ export default function ProcessOrganizationModal({
                 {folder.name}
               </span>
               <div className="flex items-center gap-1 shrink-0">
+                {/* Subir / descer na hierarquia (ordem entre irmãos) */}
+                {canMoveUp && (
+                  <button
+                    type="button"
+                    onClick={() => moveFolderUp(parentPath, folder.path)}
+                    className="p-1.5 rounded border border-gray-200 hover:bg-gray-100 transition-colors"
+                    title="Subir (acima do irmão)"
+                    aria-label="Subir"
+                  >
+                    <ArrowUp className="w-4 h-4 text-gray-600" />
+                  </button>
+                )}
+                {canMoveDown && (
+                  <button
+                    type="button"
+                    onClick={() => moveFolderDown(parentPath, folder.path)}
+                    className="p-1.5 rounded border border-gray-200 hover:bg-gray-100 transition-colors"
+                    title="Descer (abaixo do irmão)"
+                    aria-label="Descer"
+                  >
+                    <ArrowDown className="w-4 h-4 text-gray-600" />
+                  </button>
+                )}
                 {!isRoot && (
                   <>
                     <button
@@ -519,20 +686,20 @@ export default function ProcessOrganizationModal({
           </div>
         )}
 
-        {/* Conteúdo: subpastas primeiro (hierarquia clara), depois processos na pasta */}
+        {/* Conteúdo: subpastas primeiro (ordem por setas), depois processos na pasta */}
         <div className="ml-4 mt-2 space-y-2">
-          {/* Subpastas primeiro, para deixar claro que "pasta X" contém "processo Y" */}
-          {folder.subfolders.map((subfolder) => renderFolder(subfolder, level + 1))}
-          {/* Processos desta pasta (ex.: Operação Repasse Credenciada dentro de Repasse Credenciada) */}
+          {folder.subfolders.map((subfolder, idx) =>
+            renderFolder(subfolder, level + 1, idx, folder.subfolders.length),
+          )}
           {folder.processes.map((processo) => (
             <div
               key={processo.slug}
               draggable
               onDragStart={(e) => handleDragStart(e, 'process', processo)}
               className="flex items-center gap-2 p-2 bg-white border rounded-lg cursor-move transition-all"
-              style={{ 
+              style={{
                 marginLeft: `${indent + 16}px`,
-                borderColor: '#e5e7eb'
+                borderColor: '#e5e7eb',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = theme.colors.primary;
@@ -579,35 +746,41 @@ export default function ProcessOrganizationModal({
             }}
           >
             <p className="text-sm" style={{ color: theme.colors.primary }}>
-              <strong>Como usar:</strong> Arraste os processos para mover entre pastas. 
-              Use os ícones para criar, renomear ou deletar pastas.
+              <strong>Como usar:</strong> Arraste pastas ou processos para mover entre pastas ou para a Raiz. Use as setas ↑/↓ ao lado da pasta para subir ou descer na lista (ordem entre irmãos). Use os ícones para criar, renomear ou deletar pastas.
             </p>
           </div>
 
-          {/* Área de drop para raiz */}
+          {/* Área de drop para raiz - solte aqui para mover pasta/processo para o nível raiz */}
           <div
-            className="mb-4 p-4 border-2 border-dashed rounded-lg transition-colors"
+            className="mb-4 p-4 min-h-[72px] border-2 border-dashed rounded-lg transition-colors flex items-center"
             style={{
               borderColor: draggedItem ? theme.colors.primary : '#e5e7eb',
               backgroundColor: draggedItem ? `${theme.colors.primary}10` : 'transparent'
             }}
-            onDragOver={handleDragOver}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'move';
+            }}
             onDrop={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               handleDrop(null);
             }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <Folder className="w-5 h-5" style={{ color: theme.colors.primary }} />
+            <div className="flex items-center gap-2">
+              <Folder className="w-5 h-5 shrink-0" style={{ color: theme.colors.primary }} />
               <span className="font-semibold" style={{ color: theme.colors.primary }}>
                 Raiz (Solte aqui para mover para a raiz)
               </span>
             </div>
           </div>
 
-          {/* Estrutura de pastas */}
+          {/* Estrutura de pastas (ordenada por ↑/↓ entre irmãos) */}
           <div className="space-y-2">
-            {folderStructure.map((folder) => renderFolder(folder, 0))}
+            {sortedFolderStructure.map((folder, index) =>
+              renderFolder(folder, 0, index, sortedFolderStructure.length),
+            )}
           </div>
 
           {/* Criar pasta na raiz: um único bloco com botão que expande o formulário */}

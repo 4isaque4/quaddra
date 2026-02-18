@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header, Footer } from '@/components';
 import ProcessOrganizationModal from '@/components/ProcessOrganizationModal';
 import { useTheme } from '@/contexts/ThemeContext';
-import { FolderTree } from 'lucide-react';
+import { FolderTree, Trash2 } from 'lucide-react';
+
+const ORDER_STORAGE_KEY_PREFIX = 'quaddra_organize_order_';
+
+type FolderKey = string;
 
 interface ProcessoItem {
   file: string;
@@ -31,93 +35,117 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
   const { theme } = useTheme();
   const pathname = usePathname();
   
-  // Detectar basePath automaticamente se não fornecido
   const detectedBasePath = basePath || (pathname?.startsWith('/vale-shop') ? '/vale-shop' : '');
-  
-  // Debug: verificar qual tema está sendo usado
-  useEffect(() => {
-    console.log('🎨 Tema atual:', theme.name, 'Primary:', theme.colors.primary);
-  }, [theme]);
-  
+  const clientType = detectedBasePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
+
   const [processos, setProcessos] = useState<ProcessoItem[]>(processosIniciais);
-  
-  // Atualizar processos quando processosIniciais mudar (após reload)
+
   useEffect(() => {
     setProcessos(processosIniciais);
   }, [processosIniciais]);
+
   const [filtro, setFiltro] = useState('');
   const [deletando, setDeletando] = useState<string | null>(null);
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
   const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
   const [nomesCustomizados, setNomesCustomizados] = useState<Record<string, string>>({});
   const [isOrganizationModalOpen, setIsOrganizationModalOpen] = useState(false);
+  const [folderOrderMap, setFolderOrderMap] = useState<Record<string, string[]>>({});
 
-  // Carregar nomes customizados do localStorage
   useEffect(() => {
     try {
-      const storageKey = 'process_custom_names';
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        setNomesCustomizados(JSON.parse(stored));
-      }
+      const stored = localStorage.getItem('process_custom_names');
+      if (stored) setNomesCustomizados(JSON.parse(stored));
     } catch (e) {
       console.warn('Erro ao carregar nomes customizados:', e);
     }
   }, []);
 
-  // Função para obter o nome de exibição (customizado ou original)
-  const getDisplayName = (processo: ProcessoItem) => {
-    return nomesCustomizados[processo.slug] || processo.nome;
-  };
+  // Usar a mesma ordem do modal Organizar (localStorage) para refletir na listagem
+  useEffect(() => {
+    try {
+      const key = `${ORDER_STORAGE_KEY_PREFIX}${clientType}`;
+      const raw = localStorage.getItem(key);
+      if (raw) setFolderOrderMap(JSON.parse(raw));
+      else setFolderOrderMap({});
+    } catch {
+      setFolderOrderMap({});
+    }
+  }, [clientType, isOrganizationModalOpen]);
 
-  // Filtrar processos
-  const processosFiltrados = processos.filter(p =>
-    p.nome.toLowerCase().includes(filtro.toLowerCase()) ||
-    p.categoria.toLowerCase().includes(filtro.toLowerCase()) ||
-    (p.folderPath?.toLowerCase().includes(filtro.toLowerCase()) ?? false)
+  const getDisplayName = (processo: ProcessoItem) => nomesCustomizados[processo.slug] || processo.nome;
+
+  const processosFiltrados = useMemo(
+    () =>
+      processos.filter(
+        (p) =>
+          p.nome.toLowerCase().includes(filtro.toLowerCase()) ||
+          p.categoria.toLowerCase().includes(filtro.toLowerCase()) ||
+          (p.folderPath?.toLowerCase().includes(filtro.toLowerCase()) ?? false),
+      ),
+    [processos, filtro],
   );
 
-  // Agrupar por categoria e depois por subpasta (hierarquia: Fluxo > Pasta > Processos)
-  type Subgrupo = { subpastaNome: string; processos: ProcessoItem[] };
-  const gruposHierarquicos: { [categoria: string]: Subgrupo[] } = {};
-  processosFiltrados.forEach(processo => {
-    const cat = processo.categoria;
-    const parts = processo.folderPath ? processo.folderPath.split('/') : [];
-    const subpastaNome = parts.length > 1 ? parts.slice(1).join('/') : 'Raiz';
-    if (!gruposHierarquicos[cat]) gruposHierarquicos[cat] = [];
-    let sub = gruposHierarquicos[cat].find(s => s.subpastaNome === subpastaNome);
-    if (!sub) {
-      sub = { subpastaNome, processos: [] };
-      gruposHierarquicos[cat].push(sub);
-    }
-    sub.processos.push(processo);
-  });
-  // Ordenar subpastas: Raiz primeiro, depois alfabético
-  Object.keys(gruposHierarquicos).forEach(cat => {
-    gruposHierarquicos[cat].sort((a, b) => {
-      if (a.subpastaNome === 'Raiz') return -1;
-      if (b.subpastaNome === 'Raiz') return 1;
-      return a.subpastaNome.localeCompare(b.subpastaNome);
+  const gruposHierarquicos = useMemo(() => {
+    type Subgrupo = { subpastaNome: string; folderKey: FolderKey; processos: ProcessoItem[] };
+    const groups: Record<string, Subgrupo[]> = {};
+
+    processosFiltrados.forEach((processo) => {
+      const categoria = processo.categoria;
+      const parts = processo.folderPath ? processo.folderPath.split('/') : [];
+      const subpastaNome = parts.length > 1 ? parts.slice(1).join('/') : 'Raiz';
+      const folderKey = `${categoria}/${subpastaNome}`;
+
+      if (!groups[categoria]) groups[categoria] = [];
+      let sub = groups[categoria].find((item) => item.subpastaNome === subpastaNome);
+      if (!sub) {
+        sub = { subpastaNome, folderKey, processos: [] };
+        groups[categoria].push(sub);
+      }
+      sub.processos.push(processo);
     });
-  });
 
-  const handleDeleteClick = (processo: ProcessoItem) => {
-    setProcessoADeletar(processo);
-  };
+    const rootOrder = folderOrderMap[''] || [];
+    const categoriasOrdenadas = Object.keys(groups).sort((a, b) => {
+      const ia = rootOrder.indexOf(a);
+      const ib = rootOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
 
-  // Auto-fechar notificação após 5 segundos
+    const result: Record<string, Subgrupo[]> = {};
+    categoriasOrdenadas.forEach((categoria) => {
+      const subgrupos = groups[categoria];
+      const order = folderOrderMap[categoria] || [];
+      subgrupos.sort((a, b) => {
+        if (a.subpastaNome === 'Raiz') return -1;
+        if (b.subpastaNome === 'Raiz') return 1;
+        const pathA = `${categoria}/${a.subpastaNome}`;
+        const pathB = `${categoria}/${b.subpastaNome}`;
+        const ia = order.indexOf(pathA);
+        const ib = order.indexOf(pathB);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a.subpastaNome.localeCompare(b.subpastaNome);
+      });
+      result[categoria] = subgrupos;
+    });
+
+    return result;
+  }, [processosFiltrados, folderOrderMap]);
+
+  const mostrarNotificacao = (tipo: 'sucesso' | 'erro', mensagem: string) => setNotificacao({ tipo, mensagem });
+
   useEffect(() => {
-    if (notificacao) {
-      const timer = setTimeout(() => {
-        setNotificacao(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!notificacao) return;
+    const timer = setTimeout(() => setNotificacao(null), 5000);
+    return () => clearTimeout(timer);
   }, [notificacao]);
 
-  const mostrarNotificacao = (tipo: 'sucesso' | 'erro', mensagem: string) => {
-    setNotificacao({ tipo, mensagem });
-  };
+  const handleDeleteClick = (processo: ProcessoItem) => setProcessoADeletar(processo);
 
   const handleConfirmDelete = async () => {
     if (!processoADeletar) return;
@@ -125,11 +153,10 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
     setDeletando(processoADeletar.slug);
     
     try {
-      // Determinar clientType baseado no basePath detectado
-      const clientType = detectedBasePath.includes('vale-shop') ? 'valeshop' : 'quaddra';
-      const response = await fetch(`/api/delete-processo?slug=${encodeURIComponent(processoADeletar.slug)}&clientType=${clientType}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(
+        `/api/delete-processo?slug=${encodeURIComponent(processoADeletar.slug)}&clientType=${clientType}`,
+        { method: 'DELETE' },
+      );
 
       const result = await response.json();
 
@@ -151,21 +178,14 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
         return;
       }
 
-      // Remover da lista imediatamente
-      setProcessos(processos.filter(p => p.slug !== processoADeletar.slug));
+      setProcessos((prev) => prev.filter((p) => p.slug !== processoADeletar.slug));
       setProcessoADeletar(null);
-      
-      const successMsg = result.deletedGitHub 
-        ? `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado com sucesso do GitHub e localmente!`
-        : `Processo "${nomesCustomizados[processoADeletar.slug] || processoADeletar.nome}" deletado localmente!`;
-      
-      mostrarNotificacao('sucesso', successMsg);
+      mostrarNotificacao('sucesso', `Processo "${getDisplayName(processoADeletar)}" deletado com sucesso!`);
       
       // Aguardar mais tempo para garantir que o GitHub propague as mudanças
       // e recarregar com cache-busting para forçar atualização
       setTimeout(() => {
-        // Adicionar timestamp para evitar cache
-        window.location.href = window.location.pathname + '?t=' + Date.now();
+        window.location.href = `${window.location.pathname}?t=${Date.now()}`;
       }, 3000);
     } catch (error: any) {
       console.error('Erro ao deletar:', error);
@@ -237,7 +257,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
               </p>
             </div>
           ) : (
-            Object.keys(gruposHierarquicos).sort().reverse().map((categoria) => (
+            Object.keys(gruposHierarquicos).map((categoria) => (
               <div key={categoria} className="mb-10">
                 <h2 className="text-lg font-semibold text-gray-700 mb-4 pb-2 border-b-2 border-gray-200">
                   {categoria}
@@ -246,67 +266,35 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
                   {gruposHierarquicos[categoria].map((sub) => (
                     <div key={sub.subpastaNome}>
                       {sub.subpastaNome !== 'Raiz' && (
-                        <h3 className="text-sm font-medium text-gray-600 mb-3 pl-2 border-l-4" style={{ borderColor: theme.colors.primary }}>
+                        <h3
+                          className="text-sm font-medium text-gray-600 mb-3 pl-2 border-l-4"
+                          style={{ borderColor: theme.colors.primary }}
+                        >
                           {sub.subpastaNome}
                         </h3>
                       )}
+
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[...sub.processos].reverse().map((processo) => (
-                          <div
-                            key={processo.slug}
-                            className="bg-white border border-gray-200 rounded-lg p-5 transition-colors"
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = theme.colors.primary;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = '';
-                            }}
-                          >
-                            <h3 className="text-base font-semibold text-gray-900 mb-3">
-                              {getDisplayName(processo)}
-                            </h3>
+                        {sub.processos.map((item) => (
+                          <div key={item.slug} className="bg-white border border-gray-200 rounded-lg p-5">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <h3 className="text-base font-semibold text-gray-900">{getDisplayName(item)}</h3>
+                            </div>
                             <div className="flex gap-2">
                               <Link
-                                href={(detectedBasePath ? `/vale-shop/processos/${processo.slug}` : `/processos/${processo.slug}`) as Route}
+                                href={(detectedBasePath ? `/vale-shop/processos/${item.slug}` : `/processos/${item.slug}`) as Route}
                                 className="flex-1 text-white text-center px-4 py-2 rounded text-sm font-medium transition-colors"
-                                style={{
-                                  backgroundColor: theme.colors.primary,
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = theme.colors.primary;
-                                }}
+                                style={{ backgroundColor: theme.colors.primary }}
                               >
                                 Abrir
                               </Link>
                               <button
-                                onClick={() => handleDeleteClick(processo)}
-                                disabled={deletando === processo.slug}
-                                className="px-3 py-2 border border-gray-300 rounded transition-colors disabled:opacity-50"
+                                onClick={() => handleDeleteClick(item)}
+                                disabled={deletando === item.slug}
+                                className="px-3 py-2 border border-gray-300 rounded transition-colors disabled:opacity-50 hover:bg-gray-50"
                                 title="Deletar"
-                                onMouseEnter={(e) => {
-                                  if (deletando !== processo.slug) {
-                                    e.currentTarget.style.borderColor = theme.colors.primary;
-                                    e.currentTarget.style.color = theme.colors.primary;
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = '';
-                                  e.currentTarget.style.color = '';
-                                }}
                               >
-                                {deletando === processo.slug ? (
-                                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                ) : (
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                )}
+                                <Trash2 className="w-4 h-4 text-gray-600" />
                               </button>
                             </div>
                           </div>

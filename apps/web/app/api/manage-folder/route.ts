@@ -14,10 +14,11 @@ import {
 type ClientType = 'quaddra' | 'valeshop'
 
 type ManageFolderPayload = {
-  action?: 'create' | 'rename' | 'delete'
+  action?: 'create' | 'rename' | 'delete' | 'move'
   folderPath?: string
   newName?: string
   parentPath?: string | null
+  targetParentPath?: string | null
   clientType?: ClientType
 }
 
@@ -128,8 +129,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ação é obrigatória' }, { status: 400 })
     }
 
-    if (action !== 'create' && !folderPath) {
+    if (action !== 'create' && action !== 'move' && !folderPath) {
       return NextResponse.json({ error: 'Caminho da pasta é obrigatório para esta ação' }, { status: 400 })
+    }
+    if (action === 'move' && !folderPath) {
+      return NextResponse.json({ error: 'Caminho da pasta é obrigatório para mover' }, { status: 400 })
     }
 
     if (!GITHUB_TOKEN || !octokit) {
@@ -325,6 +329,133 @@ export async function POST(request: Request) {
           success: true,
           message: 'Pasta renomeada com sucesso',
           newPath: targetFolderPath,
+          repo,
+        })
+      }
+
+      case 'move': {
+        const rawTarget = payload.targetParentPath
+        const targetParentPath = rawTarget === null || rawTarget === undefined
+          ? null
+          : sanitizePath(rawTarget)
+
+        if (targetParentPath === folderPath) {
+          return NextResponse.json(
+            { error: 'Não é possível mover uma pasta para si mesma' },
+            { status: 400 },
+          )
+        }
+        if (targetParentPath && (targetParentPath === folderPath || targetParentPath.startsWith(`${folderPath}/`))) {
+          return NextResponse.json(
+            { error: 'Não é possível mover uma pasta para dentro de uma subpasta sua' },
+            { status: 400 },
+          )
+        }
+
+        const folderName = folderPath.split('/').pop() || folderPath
+        const newPath = targetParentPath ? `${targetParentPath}/${folderName}` : folderName
+
+        const { data: refData } = await withRetry(
+          () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+          `manage-folder:move:getRef:${repo}`,
+        )
+
+        const { data: currentTree } = await withRetry(
+          () => api.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: refData.object.sha, recursive: 'true' }),
+          `manage-folder:move:getTree:${repo}`,
+        )
+
+        const hasFolder = (currentTree.tree || []).some((item) => item.path?.startsWith(`${folderPath}/`))
+        if (!hasFolder) {
+          return NextResponse.json({ error: 'Pasta não encontrada no GitHub' }, { status: 404 })
+        }
+
+        const filesToMove = (currentTree.tree || []).filter(
+          (item) => item.type === 'blob' && item.path && item.path.startsWith(`${folderPath}/`),
+        )
+
+        const maxUpdateAttempts = 3
+        for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
+          const { data: latestRef } = await withRetry(
+            () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+            `manage-folder:move:loopRef:${repo}`,
+          )
+          const latestSha = latestRef.object.sha
+
+          const { data: latestCommit } = await withRetry(
+            () => api.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
+            `manage-folder:move:loopCommit:${repo}`,
+          )
+
+          const treeItems: Array<{ path: string; mode: '100644'; type: 'blob'; sha: string | null }> = []
+          for (const file of filesToMove) {
+            const oldPath = file.path!
+            const relative = oldPath.slice(folderPath.length + 1)
+            const newFilePath = `${newPath}/${relative}`
+
+            const { data: fileData } = await withRetry(
+              () => api.repos.getContent({ owner: GITHUB_OWNER, repo, path: oldPath, ref: GITHUB_BRANCH }),
+              `manage-folder:move:getContent:${repo}`,
+            )
+
+            if (!('content' in fileData) || !fileData.content) continue
+            const content = Buffer.from(fileData.content, 'base64').toString('utf-8')
+
+            const { data: blob } = await withRetry(
+              () => api.git.createBlob({ owner: GITHUB_OWNER, repo, content, encoding: 'utf-8' }),
+              `manage-folder:move:createBlob:${repo}`,
+            )
+
+            treeItems.push({ path: newFilePath, mode: '100644', type: 'blob', sha: blob.sha })
+          }
+
+          for (const file of filesToMove) {
+            treeItems.push({ path: file.path!, mode: '100644', type: 'blob', sha: null })
+          }
+
+          const { data: newTree } = await withRetry(
+            () =>
+              api.git.createTree({
+                owner: GITHUB_OWNER,
+                repo,
+                base_tree: latestCommit.tree.sha,
+                tree: treeItems,
+              }),
+            `manage-folder:move:createTree:${repo}`,
+          )
+
+          const { data: newCommit } = await withRetry(
+            () =>
+              api.git.createCommit({
+                owner: GITHUB_OWNER,
+                repo,
+                message: `chore: mover pasta ${folderPath} para ${newPath}`,
+                tree: newTree.sha,
+                parents: [latestSha],
+              }),
+            `manage-folder:move:createCommit:${repo}`,
+          )
+
+          try {
+            await api.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
+            break
+          } catch (err: any) {
+            if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue
+            throw err
+          }
+        }
+
+        if (fullFolderPath && existsSync(fullFolderPath)) {
+          const newFullPath = join(bpmnDir, newPath)
+          const parentDir = newPath.includes('/') ? join(bpmnDir, newPath.split('/').slice(0, -1).join('/')) : bpmnDir
+          mkdirSync(parentDir, { recursive: true })
+          renameSync(fullFolderPath, newFullPath)
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: targetParentPath ? `Pasta movida para ${targetParentPath}` : 'Pasta movida para a raiz',
+          newPath,
           repo,
         })
       }
