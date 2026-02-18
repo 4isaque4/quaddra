@@ -56,19 +56,43 @@ jobs:
           use_insecure_cipher: false
           envs: GITHUB_TOKEN
           script: |
+            set -e
             echo "🚀 Iniciando deploy..."
             echo "📡 Verificando conectividade com o servidor..."
             
-            # Verificar se o servidor está acessível
             if ! ping -c 3 localhost > /dev/null 2>&1; then
               echo "⚠️ Aviso: Problemas de conectividade detectados"
             fi
             
-            # Navegar para o diretório do projeto
             cd /var/www/quaddra || {
               echo "❌ Erro: Diretório /var/www/quaddra não encontrado!"
               exit 1
             }
+            
+            # Prisma 7 e dependências exigem Node 20.19+. Garantir Node 20 no servidor.
+            need_node20() {
+              echo "❌ Este projeto exige Node.js 20.19+ (Prisma 7)."
+              echo "   No servidor, instale e use Node 20, por exemplo:"
+              echo "   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
+              echo "   source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20"
+              exit 1
+            }
+            NODE_VER=$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1) || true
+            if [ -z "$NODE_VER" ] || [ "$NODE_VER" -lt 20 ] 2>/dev/null; then
+              if [ -s "$HOME/.nvm/nvm.sh" ]; then
+                echo "📦 Ativando Node 20 via nvm..."
+                . "$HOME/.nvm/nvm.sh"
+                nvm install 20 2>/dev/null || true
+                nvm use 20
+              elif [ -s "/root/.nvm/nvm.sh" ]; then
+                . "/root/.nvm/nvm.sh"
+                nvm install 20 2>/dev/null || true
+                nvm use 20
+              else
+                need_node20
+              fi
+            fi
+            echo "✅ Node $(node -v)"
             
             # Fazer backup rápido do .env (se existir)
             if [ -f apps/web/.env.local ]; then
