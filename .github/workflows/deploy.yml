@@ -9,7 +9,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+    env:
+      # Prisma 7 exige DATABASE_URL no prisma.config.ts; generate/build não conectam ao banco no CI
+      DATABASE_URL: "postgresql://localhost:5432/dummy?schema=public"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
