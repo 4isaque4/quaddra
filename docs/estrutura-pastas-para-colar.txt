@@ -1,0 +1,7 @@
+Fluxo Operação Cartão
+Fluxo Operação Cartão/Faturamento Cliente 1
+Fluxo Operação Cartão/Repasse Credenciada
+Fluxo Contratos
+Fluxo Contratos/Credenciada
+Fluxo Contratos/Cliente Privado
+Fluxo Contratos/Cliente Público

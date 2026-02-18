@@ -30,7 +30,9 @@ function toProcessoItem(path: string, slug: string, name: string): ProcessoItem 
 async function getProcessos(): Promise<ProcessoItem[]> {
   if (!octokit) {
     console.warn('[VALESHOP] GITHUB_TOKEN não configurado')
-    return []
+    return listLocalBpmnFiles()
+      .map((file) => toProcessoItem(file.path, file.slug, file.name))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
   }
 
   try {

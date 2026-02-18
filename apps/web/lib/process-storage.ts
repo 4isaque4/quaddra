@@ -18,13 +18,20 @@ export function normalizeSlug(text: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/ç/g, 'c')
     .replace(/Ç/g, 'C')
-    .replace(/\s+/g, '-')
-    .replace(/\//g, '-')
+    .replace(/[\s/]+/g, '-')
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
     .toLowerCase()
 }
 
 export function normalizeIncomingSlug(slug: string): string {
   return normalizeSlug(decodeURIComponent(slug || '').replace(/\.bpmn$/i, ''))
+}
+
+/** Colapsa hífens consecutivos para um (ex: "a---b" -> "a-b") para matching mais flexível */
+export function slugCollapseDashes(slug: string): string {
+  return slug.replace(/-+/g, '-').replace(/^-|-$/g, '')
 }
 
 export function getBpmnStorageDir(): string {
@@ -100,6 +107,39 @@ export async function listGithubBpmnFiles(repo: string): Promise<BpmnFile[]> {
         slug: normalizeSlug(path.replace(/\.bpmn$/i, '')),
       }
     })
+}
+
+/** Lista todos os caminhos de pasta do repositório (incluindo pastas vazias / só com .gitkeep). */
+export async function listGithubFolderPaths(repo: string): Promise<string[]> {
+  if (!octokit) return []
+
+  const { data: refData } = await withRetry(
+    () => octokit!.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+    `getRef:${repo}`,
+  )
+
+  const { data: treeData } = await withRetry(
+    () =>
+      octokit!.git.getTree({
+        owner: GITHUB_OWNER,
+        repo,
+        tree_sha: refData.object.sha,
+        recursive: 'true',
+      }),
+    `getTree:${repo}`,
+  )
+
+  const folderSet = new Set<string>()
+  for (const item of treeData.tree || []) {
+    const path = item.path
+    if (!path) continue
+    const parts = path.split('/')
+    if (parts.length <= 1) continue
+    for (let i = 1; i < parts.length; i++) {
+      folderSet.add(parts.slice(0, i).join('/'))
+    }
+  }
+  return Array.from(folderSet).sort()
 }
 
 export function removeEmptyParents(startPath: string, stopPath: string): void {

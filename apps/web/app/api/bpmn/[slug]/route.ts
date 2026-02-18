@@ -2,16 +2,24 @@ import { NextResponse } from 'next/server'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import {
+  GITHUB_BRANCH,
   GITHUB_OWNER,
   GITHUB_REPO_QUADDRA,
   GITHUB_REPO_VALESHOP,
-  GITHUB_BRANCH,
   listGithubBpmnFiles,
   listLocalBpmnFiles,
   normalizeIncomingSlug,
   octokit,
+  slugCollapseDashes,
   withRetry,
 } from '@/lib/process-storage'
+
+function findMatchBySlug<T extends { slug: string }>(files: T[], normalizedSlug: string): T | undefined {
+  const exact = files.find((item) => item.slug === normalizedSlug)
+  if (exact) return exact
+  const collapsed = slugCollapseDashes(normalizedSlug)
+  return files.find((item) => slugCollapseDashes(item.slug) === collapsed)
+}
 
 function bpmnResponse(content: string, filename: string): NextResponse {
   return new NextResponse(content, {
@@ -32,7 +40,7 @@ export async function GET(_request: Request, { params }: { params: { slug: strin
     if (octokit) {
       for (const repo of [GITHUB_REPO_VALESHOP, GITHUB_REPO_QUADDRA]) {
         const files = await listGithubBpmnFiles(repo)
-        const match = files.find((item) => item.slug === normalizedSlug)
+        const match = findMatchBySlug(files, normalizedSlug)
 
         if (!match) continue
 
@@ -54,7 +62,7 @@ export async function GET(_request: Request, { params }: { params: { slug: strin
       }
     }
 
-    const localMatch = listLocalBpmnFiles().find((item) => item.slug === normalizedSlug)
+    const localMatch = findMatchBySlug(listLocalBpmnFiles(), normalizedSlug)
     if (localMatch) {
       const fullPath = join(process.cwd(), '..', 'api', 'storage', 'bpmn', ...localMatch.path.split('/'))
       if (existsSync(fullPath)) {
