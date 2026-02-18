@@ -135,6 +135,7 @@ export async function POST(request: Request) {
     if (!GITHUB_TOKEN || !octokit) {
       return NextResponse.json({ error: 'GITHUB_TOKEN não configurado' }, { status: 500 })
     }
+    const api = octokit
 
     const bpmnDir = join(process.cwd(), '..', 'api', 'storage', 'bpmn')
     const fullFolderPath = folderPath ? join(bpmnDir, folderPath) : null
@@ -154,13 +155,13 @@ export async function POST(request: Request) {
 
         try {
           const { data: refData } = await withRetry(
-            () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+            () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
             `manage-folder:create:checkRef:${repo}`,
           )
 
           const { data: currentTree } = await withRetry(
             () =>
-              octokit.git.getTree({
+              api.git.getTree({
                 owner: GITHUB_OWNER,
                 repo,
                 tree_sha: refData.object.sha,
@@ -208,17 +209,17 @@ export async function POST(request: Request) {
         }
 
         const { data: refData } = await withRetry(
-          () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+          () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
           `manage-folder:rename:getRef:${repo}`,
         )
 
         const { data: commitData } = await withRetry(
-          () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: refData.object.sha }),
+          () => api.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: refData.object.sha }),
           `manage-folder:rename:getCommit:${repo}`,
         )
 
         const { data: currentTree } = await withRetry(
-          () => octokit.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: commitData.tree.sha, recursive: 'true' }),
+          () => api.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: commitData.tree.sha, recursive: 'true' }),
           `manage-folder:rename:getTree:${repo}`,
         )
 
@@ -252,13 +253,13 @@ export async function POST(request: Request) {
         const maxUpdateAttempts = 3
         for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
           const { data: latestRef } = await withRetry(
-            () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+            () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
             `manage-folder:rename:loopRef:${repo}`,
           )
           const latestSha = latestRef.object.sha
 
           const { data: latestCommit } = await withRetry(
-            () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
+            () => api.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
             `manage-folder:rename:loopCommit:${repo}`,
           )
 
@@ -269,7 +270,7 @@ export async function POST(request: Request) {
             const newPath = `${targetFolderPath}/${relative}`
 
             const { data: fileData } = await withRetry(
-              () => octokit.repos.getContent({ owner: GITHUB_OWNER, repo, path: oldPath, ref: GITHUB_BRANCH }),
+              () => api.repos.getContent({ owner: GITHUB_OWNER, repo, path: oldPath, ref: GITHUB_BRANCH }),
               `manage-folder:rename:getContent:${repo}`,
             )
 
@@ -277,7 +278,7 @@ export async function POST(request: Request) {
             const content = Buffer.from(fileData.content, 'base64').toString('utf-8')
 
             const { data: blob } = await withRetry(
-              () => octokit.git.createBlob({ owner: GITHUB_OWNER, repo, content, encoding: 'utf-8' }),
+              () => api.git.createBlob({ owner: GITHUB_OWNER, repo, content, encoding: 'utf-8' }),
               `manage-folder:rename:createBlob:${repo}`,
             )
 
@@ -290,7 +291,7 @@ export async function POST(request: Request) {
 
           const { data: newTree } = await withRetry(
             () =>
-              octokit.git.createTree({
+              api.git.createTree({
                 owner: GITHUB_OWNER,
                 repo,
                 base_tree: latestCommit.tree.sha,
@@ -301,7 +302,7 @@ export async function POST(request: Request) {
 
           const { data: newCommit } = await withRetry(
             () =>
-              octokit.git.createCommit({
+              api.git.createCommit({
                 owner: GITHUB_OWNER,
                 repo,
                 message: `chore: renomear pasta ${folderPath} para ${newName}`,
@@ -312,7 +313,7 @@ export async function POST(request: Request) {
           )
 
           try {
-            await octokit.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
+            await api.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
             break
           } catch (err: any) {
             if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue
@@ -330,12 +331,12 @@ export async function POST(request: Request) {
 
       case 'delete': {
         const { data: refData } = await withRetry(
-          () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+          () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
           `manage-folder:delete:getRef:${repo}`,
         )
 
         const { data: currentTree } = await withRetry(
-          () => octokit.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: refData.object.sha, recursive: 'true' }),
+          () => api.git.getTree({ owner: GITHUB_OWNER, repo, tree_sha: refData.object.sha, recursive: 'true' }),
           `manage-folder:delete:getTree:${repo}`,
         )
 
@@ -354,19 +355,19 @@ export async function POST(request: Request) {
           const maxUpdateAttempts = 3
           for (let attempt = 1; attempt <= maxUpdateAttempts; attempt += 1) {
             const { data: latestRef } = await withRetry(
-              () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+              () => api.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
               `manage-folder:delete:loopRef:${repo}`,
             )
             const latestSha = latestRef.object.sha
 
             const { data: latestCommit } = await withRetry(
-              () => octokit.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
+              () => api.git.getCommit({ owner: GITHUB_OWNER, repo, commit_sha: latestSha }),
               `manage-folder:delete:loopCommit:${repo}`,
             )
 
             const { data: newTree } = await withRetry(
               () =>
-                octokit.git.createTree({
+                api.git.createTree({
                   owner: GITHUB_OWNER,
                   repo,
                   base_tree: latestCommit.tree.sha,
@@ -377,7 +378,7 @@ export async function POST(request: Request) {
 
             const { data: newCommit } = await withRetry(
               () =>
-                octokit.git.createCommit({
+                api.git.createCommit({
                   owner: GITHUB_OWNER,
                   repo,
                   message: `chore: deletar pasta ${folderPath}`,
@@ -388,7 +389,7 @@ export async function POST(request: Request) {
             )
 
             try {
-              await octokit.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
+              await api.git.updateRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}`, sha: newCommit.sha })
               break
             } catch (err: any) {
               if (isNotFastForward(err) && attempt < maxUpdateAttempts) continue

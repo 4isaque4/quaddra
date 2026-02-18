@@ -37,6 +37,8 @@ jobs:
           echo "🔐 Testando autenticação SSH..."
 
       - name: Deploy to VPS
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN_QUADRRA }}
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -46,6 +48,7 @@ jobs:
           timeout: 300s
           command_timeout: 600s
           use_insecure_cipher: false
+          envs: GITHUB_TOKEN
           script: |
             echo "🚀 Iniciando deploy..."
             echo "📡 Verificando conectividade com o servidor..."
@@ -77,22 +80,20 @@ jobs:
             else
               # Criar .env.local se não existir (com valores padrão)
               if [ ! -f apps/web/.env.local ]; then
-                echo "⚠️ Criando .env.local com valores padrão..."
+                echo "⚠️ Criando .env.local (token do GitHub vem do segredo DEPLOY_TOKEN_QUADRRA)..."
                 {
-                  echo "GITHUB_TOKEN="
+                  echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"
                   echo "GITHUB_OWNER=4isaque4"
                   echo "GITHUB_REPO_QUADDRA=vale-shope-processos"
                   echo "GITHUB_REPO_VALESHOP=vale-shope-processos"
                   echo "GITHUB_BRANCH=main"
                 } > apps/web/.env.local
-                echo "⚠️ IMPORTANTE: Configure o GITHUB_TOKEN no arquivo /var/www/quaddra/apps/web/.env.local"
+                if [ -n "$GITHUB_TOKEN" ]; then
+                  echo "✅ GITHUB_TOKEN preenchido a partir do segredo DEPLOY_TOKEN_QUADRRA"
+                else
+                  echo "⚠️ Configure o segredo DEPLOY_TOKEN_QUADRRA no repositório ou edite .env.local no servidor"
+                fi
               fi
-            fi
-            
-            # Verificar se GITHUB_TOKEN está configurado
-            if grep -q "GITHUB_TOKEN=$" apps/web/.env.local || ! grep -q "GITHUB_TOKEN=" apps/web/.env.local; then
-              echo "⚠️ AVISO: GITHUB_TOKEN não está configurado no .env.local do servidor!"
-              echo "⚠️ Configure manualmente via SSH: nano /var/www/quaddra/apps/web/.env.local"
             fi
             
             # Instalar dependências

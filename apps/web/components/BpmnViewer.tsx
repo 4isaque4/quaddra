@@ -98,7 +98,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     }
   }, [storageKey]);
 
-  const getBizagiColorsFromBo = (bo: Record<string, unknown>): { fill?: string; stroke?: string } => {
+  const getBizagiColorsFromBo = useCallback((bo: Record<string, unknown>): { fill?: string; stroke?: string } => {
     const out: { fill?: string; stroke?: string } = {};
     try {
       const ext = (bo.get as (k: string) => unknown)?.('extensionElements') ?? bo.extensionElements;
@@ -123,9 +123,9 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       // ignore
     }
     return out;
-  };
+  }, []);
 
-  const applyBizagiColors = (instance: { get: (name: string) => unknown }) => {
+  const applyBizagiColors = useCallback((instance: { get: (name: string) => unknown }) => {
     try {
       const elementRegistry = instance.get('elementRegistry') as { getAll: () => Array<{ id: string; businessObject?: Record<string, unknown> & { di?: { $attrs?: Record<string, string> }; get?: (k: string) => unknown }; type?: string }>; getGraphics: (el: { id: string }) => Element | null };
       for (const el of elementRegistry.getAll()) {
@@ -136,8 +136,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         let stroke = attrs['bioc:stroke'] || attrs['bizagi:strokeColor'] || attrs['color:border-color'] || attrs['bi:borderColor'] || attrs['stroke'];
         if (!fill && !stroke) {
           const fromExt = getBizagiColorsFromBo(bo as Record<string, unknown>);
-          fill = fromExt.fill;
-          stroke = fromExt.stroke;
+          fill = fromExt.fill ?? fill;
+          stroke = fromExt.stroke ?? stroke;
         }
         if (!fill && !stroke) {
           const elType = (el.type || (bo as { $type?: string }).$type) || '';
@@ -168,7 +168,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     } catch (e) {
       console.warn('[BPMN] Falha ao aplicar cores Bizagi:', e);
     }
-  };
+  }, [getBizagiColorsFromBo]);
 
   const ensureTextAnnotationsVisible = (
     instance: { get: (name: string) => unknown },
@@ -414,7 +414,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         }
       }
     };
-  }, [bpmnUrl, descriptionsUrl, contentUrl, getLocalEdits]);
+  }, [bpmnUrl, descriptionsUrl, contentUrl, getLocalEdits, applyBizagiColors]);
 
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
@@ -452,7 +452,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [isResizing, isDragging]);
+  }, [isResizing, isDragging, modalSize.width, modalSize.height]);
 
   const saveEdits = () => {
     if (!editedData) return;
@@ -514,7 +514,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       ` }} />
       <div className="quaddra-bpmn rounded-lg border border-gray-200 bg-white flex-1 min-h-0 flex flex-col relative">
         <div ref={canvasRef} className="w-full flex-1 min-h-[420px]" />
-        {viewer && (
+        {viewer ? (
           <button
             type="button"
             onClick={() => {
@@ -540,7 +540,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           >
             Recentralizar
           </button>
-        )}
+        ) : null}
       </div>
       <p className="mt-1 text-xs text-gray-400 text-center flex-shrink-0">
         {viewer ? 'Duplo clique no elemento para detalhes' : 'Carregando...'}
@@ -614,7 +614,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
               <ArrayField title="Observações" readValues={selected.observacoes || []} editing={isEditing} values={editedData.observacoes || []} onAdd={() => addArrayItem('observacoes')} onChange={(i, v) => updateArrayItem('observacoes', i, v)} onRemove={(i) => removeArrayItem('observacoes', i)} />
 
               {(selected.textoFormatado?.trim() ?? '') && (
-                <Field title="Texto formatado (BPMN)" readValue={selected.textoFormatado} editing={false} full>
+                <Field title="Texto formatado (BPMN)" readValue={selected.textoFormatado ?? ''} editing={false} full>
                   <></>
                 </Field>
               )}
