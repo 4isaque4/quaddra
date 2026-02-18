@@ -45,6 +45,7 @@ jobs:
       - name: Deploy to VPS
         env:
           GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN_QUADRRA }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -54,7 +55,7 @@ jobs:
           timeout: 300s
           command_timeout: 600s
           use_insecure_cipher: false
-          envs: GITHUB_TOKEN
+          envs: GITHUB_TOKEN,DATABASE_URL
           script: |
             set -e
             echo "🚀 Iniciando deploy..."
@@ -110,20 +111,23 @@ jobs:
             else
               # Criar .env.local se não existir (com valores padrão)
               if [ ! -f apps/web/.env.local ]; then
-                echo "⚠️ Criando .env.local (token do GitHub vem do segredo DEPLOY_TOKEN_QUADRRA)..."
+                echo "⚠️ Criando .env.local (valores dos segredos DEPLOY_TOKEN_QUADRRA e DATABASE_URL)..."
                 {
                   echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"
+                  echo "DATABASE_URL=${DATABASE_URL:-}"
                   echo "GITHUB_OWNER=4isaque4"
                   echo "GITHUB_REPO_QUADDRA=vale-shope-processos"
                   echo "GITHUB_REPO_VALESHOP=vale-shope-processos"
                   echo "GITHUB_BRANCH=main"
                 } > apps/web/.env.local
-                if [ -n "$GITHUB_TOKEN" ]; then
-                  echo "✅ GITHUB_TOKEN preenchido a partir do segredo DEPLOY_TOKEN_QUADRRA"
-                else
-                  echo "⚠️ Configure o segredo DEPLOY_TOKEN_QUADRRA no repositório ou edite .env.local no servidor"
-                fi
+                if [ -n "$GITHUB_TOKEN" ]; then echo "✅ GITHUB_TOKEN preenchido"; fi
+                if [ -n "$DATABASE_URL" ]; then echo "✅ DATABASE_URL preenchido"; fi
               fi
+            fi
+            # Garantir DATABASE_URL no .env.local para prisma generate e para a app em runtime
+            if [ -n "$DATABASE_URL" ] && ! grep -q '^DATABASE_URL=' apps/web/.env.local 2>/dev/null; then
+              echo "DATABASE_URL=$DATABASE_URL" >> apps/web/.env.local
+              echo "✅ DATABASE_URL adicionado ao .env.local"
             fi
             
             # Instalar dependências
@@ -137,8 +141,9 @@ jobs:
             rm -rf .next
             rm -rf node_modules/.cache
             
-            # Build da aplicação
+            # Build (Prisma 7 exige DATABASE_URL no ambiente para prisma.config.ts)
             echo "🔨 Executando build..."
+            export DATABASE_URL="${DATABASE_URL:-$(grep -E '^DATABASE_URL=' .env.local 2>/dev/null | cut -d= -f2-)}"
             npm run build
             
             cd ../..
