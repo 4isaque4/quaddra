@@ -4,7 +4,8 @@ import { dirname, join, relative } from 'path'
 
 export type BpmnFile = { path: string; name: string; slug: string }
 
-export const GITHUB_TOKEN = process.env.GITHUB_TOKEN || ''
+/** Token do GitHub: GITHUB_TOKEN ou DEPLOY_TOKEN_QUADRRA (segredo no repositório). */
+export const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.DEPLOY_TOKEN_QUADRRA || ''
 export const GITHUB_OWNER = process.env.GITHUB_OWNER || '4isaque4'
 export const GITHUB_REPO_QUADDRA = process.env.GITHUB_REPO_QUADDRA || 'vale-shope-processos'
 export const GITHUB_REPO_VALESHOP = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos'
