@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import ValeShopProcessoPageClient from './ValeShopProcessoPageClient'
 import {
   GITHUB_REPO_VALESHOP,
@@ -35,26 +35,61 @@ function toProcessoInfo(path: string): ProcessoInfo {
   }
 }
 
+function compactSlug(value: string): string {
+  return normalizeIncomingSlug(value).replace(/[^a-z0-9]/g, '')
+}
+
 function isSlugMatch(candidate: string, requested: string): boolean {
-  if (candidate === requested) return true
-  const compactCandidate = candidate.replace(/-/g, '')
-  const compactRequested = requested.replace(/-/g, '')
-  return compactCandidate === compactRequested
+  const normalizedCandidate = normalizeIncomingSlug(candidate)
+  const normalizedRequested = normalizeIncomingSlug(requested)
+
+  if (normalizedCandidate === normalizedRequested) return true
+  const compactCandidate = compactSlug(normalizedCandidate)
+  const compactRequested = compactSlug(normalizedRequested)
+
+  if (compactCandidate === compactRequested) return true
+
+  return compactCandidate.endsWith(compactRequested) || compactRequested.endsWith(compactCandidate)
+}
+
+function toFallbackProcessoInfo(slug: string): ProcessoInfo {
+  const normalizedSlug = normalizeIncomingSlug(slug)
+  const parts = normalizedSlug.split('-').filter(Boolean)
+  const categoria = parts[0] ? `${parts[0].charAt(0).toUpperCase()}${parts[0].slice(1)}` : 'Raiz'
+  const nome = parts.length > 1
+    ? parts.slice(1).map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(' ')
+    : normalizedSlug
+
+  return {
+    slug: normalizedSlug,
+    nome,
+    file: `${categoria}/${nome}.bpmn`,
+    arquivo: `${categoria}/${nome}.bpmn`,
+    categoria,
+    bpmnUrl: `/api/bpmn/${encodeURIComponent(normalizedSlug)}`,
+    descriptionsUrl: '/api/descriptions',
+    contentUrl: `/api/content/${encodeURIComponent(normalizedSlug)}`,
+  }
 }
 
 async function findProcesso(slug: string): Promise<{ atual: ProcessoInfo; outros: ProcessoInfo[] } | null> {
   const normalizedSlug = normalizeIncomingSlug(slug)
-  const githubFiles = await listGithubBpmnFiles(GITHUB_REPO_VALESHOP)
-  const githubMatch = githubFiles.find((file) => isSlugMatch(file.slug, normalizedSlug))
 
-  if (githubMatch) {
-    const prefix = githubMatch.path.includes('/') ? `${githubMatch.path.split('/')[0]}/` : ''
-    const outros = githubFiles
-      .filter((item) => item.path !== githubMatch.path)
-      .filter((item) => (prefix ? item.path.startsWith(prefix) : false))
-      .map((item) => toProcessoInfo(item.path))
+  try {
+    const githubFiles = await listGithubBpmnFiles(GITHUB_REPO_VALESHOP)
+    const githubMatch = githubFiles.find((file) => isSlugMatch(file.slug, normalizedSlug))
 
-    return { atual: toProcessoInfo(githubMatch.path), outros }
+    if (githubMatch) {
+      const prefix = githubMatch.path.includes('/') ? `${githubMatch.path.split('/')[0]}/` : ''
+      const outros = githubFiles
+        .filter((item) => item.path !== githubMatch.path)
+        .filter((item) => (prefix ? item.path.startsWith(prefix) : false))
+        .map((item) => toProcessoInfo(item.path))
+
+      return { atual: toProcessoInfo(githubMatch.path), outros }
+    }
+  } catch (error) {
+    console.warn('[Vale Shop] Falha ao consultar processos no GitHub. Aplicando fallback local.', error)
   }
 
   const localFiles = listLocalBpmnFiles()
@@ -72,8 +107,22 @@ async function findProcesso(slug: string): Promise<{ atual: ProcessoInfo; outros
 
 export default async function ValeShopProcessoPage({ params }: { params: Promise<{ slug: string }> | { slug: string } }) {
   const resolvedParams = params instanceof Promise ? await params : params
-  const resultado = await findProcesso(resolvedParams.slug)
-  if (!resultado) notFound()
+
+  let resultado: { atual: ProcessoInfo; outros: ProcessoInfo[] } | null = null
+  try {
+    resultado = await findProcesso(resolvedParams.slug)
+  } catch (error) {
+    console.error('[Vale Shop] Erro ao carregar processo:', resolvedParams.slug, error)
+    redirect('/vale-shop/processos?erro=processo-indisponivel')
+  }
+
+  if (!resultado) {
+    console.warn('[Vale Shop] Processo não localizado no índice. Tentando carregamento direto por slug:', resolvedParams.slug)
+    resultado = {
+      atual: toFallbackProcessoInfo(resolvedParams.slug),
+      outros: [],
+    }
+  }
 
   return <ValeShopProcessoPageClient processo={resultado.atual} outros={resultado.outros} />
 }

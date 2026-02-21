@@ -17,12 +17,12 @@ export default function Header() {
   const valeLinks = [
     { href: '/vale-shop/processos', label: 'Processos' },
     { href: '/vale-shop/processos/inserir', label: 'Inserir Processos' },
-    { href: '/', label: 'Voltar para Quaddra' },
+    { href: '/', label: 'Voltar' },
   ]
 
   return (
     <header
-      className="fixed top-0 left-0 w-full z-50 h-24 shadow-sm"
+      className="fixed top-0 left-0 w-full z-50 h-24 shadow-sm overflow-hidden"
       style={{
         backgroundColor: isValeShop ? 'var(--header-bg, #005EA8)' : '#fff',
         color: isValeShop ? 'var(--header-fg, #FFFFFF)' : undefined,
@@ -40,7 +40,7 @@ export default function Header() {
       )}
 
       <nav className="container flex justify-between items-center h-full">
-        <Link href={isValeShop ? '/vale-shop/processos' : '/'} className="logo" onClick={closeMenu}>
+        <Link href={isValeShop ? '/vale-shop/processos' : '/'} className="logo flex items-center shrink-0" onClick={closeMenu}>
           {isValeShop ? (
             <Image
               src="/valeshop-logo.svg"
@@ -48,10 +48,10 @@ export default function Header() {
               width={220}
               height={74}
               priority
-              style={{ height: 'auto', width: '220px' }}
+              className="h-16 w-auto object-contain"
             />
           ) : (
-            <Image src="/logo.png" alt="Quaddra" width={1200} height={300} priority style={{ height: '200px', width: 'auto' }} />
+            <Image src="/logo.png" alt="Quaddra" width={1200} height={300} priority className="h-16 w-auto object-contain" />
           )}
         </Link>
 

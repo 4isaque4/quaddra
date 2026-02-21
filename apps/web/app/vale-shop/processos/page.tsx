@@ -55,7 +55,9 @@ async function getProcessos(): Promise<ProcessoItem[]> {
     return processos
   } catch (error: any) {
     console.error('[VALESHOP] erro ao buscar processos:', error?.message || error)
-    return []
+    return listLocalBpmnFiles()
+      .map((file) => toProcessoItem(file.path, file.slug, file.name))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
   }
 }
 

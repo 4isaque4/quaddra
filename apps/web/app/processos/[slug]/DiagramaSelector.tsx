@@ -57,9 +57,6 @@ export default function DiagramaSelector({ processoAtual, outrosDiagramas }: Dia
           </option>
         ))}
       </select>
-      <p className="text-xs mt-2" style={{ color: theme.colors.textSecondary }}>
-        {outrosDiagramas.length + 1} diagrama{outrosDiagramas.length > 0 ? 's' : ''} disponível{outrosDiagramas.length > 0 ? 'eis' : ''} neste processo
-      </p>
     </div>
   )
 }

@@ -11,7 +11,7 @@ export const GITHUB_REPO_QUADDRA = process.env.GITHUB_REPO_QUADDRA || 'vale-shop
 export const GITHUB_REPO_VALESHOP = process.env.GITHUB_REPO_VALESHOP || 'vale-shope-processos'
 export const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main'
 
-export const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null
+export const octokit = new Octokit(GITHUB_TOKEN ? { auth: GITHUB_TOKEN } : {})
 
 export function normalizeSlug(text: string): string {
   return text
@@ -80,16 +80,14 @@ export async function withRetry<T>(operation: () => Promise<T>, label: string, a
 }
 
 export async function listGithubBpmnFiles(repo: string): Promise<BpmnFile[]> {
-  if (!octokit) return []
-
   const { data: refData } = await withRetry(
-    () => octokit!.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+    () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
     `getRef:${repo}`,
   )
 
   const { data: treeData } = await withRetry(
     () =>
-      octokit!.git.getTree({
+      octokit.git.getTree({
         owner: GITHUB_OWNER,
         repo,
         tree_sha: refData.object.sha,
@@ -112,16 +110,14 @@ export async function listGithubBpmnFiles(repo: string): Promise<BpmnFile[]> {
 
 /** Lista todos os caminhos de pasta do repositório (incluindo pastas vazias / só com .gitkeep). */
 export async function listGithubFolderPaths(repo: string): Promise<string[]> {
-  if (!octokit) return []
-
   const { data: refData } = await withRetry(
-    () => octokit!.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
+    () => octokit.git.getRef({ owner: GITHUB_OWNER, repo, ref: `heads/${GITHUB_BRANCH}` }),
     `getRef:${repo}`,
   )
 
   const { data: treeData } = await withRetry(
     () =>
-      octokit!.git.getTree({
+      octokit.git.getTree({
         owner: GITHUB_OWNER,
         repo,
         tree_sha: refData.object.sha,

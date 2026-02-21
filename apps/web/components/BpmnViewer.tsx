@@ -51,6 +51,15 @@ function normalizeArray(v: unknown): string[] {
   return v.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+function getElementDiAttrs(el: unknown): Record<string, string> {
+  try {
+    const element = el as { di?: { $attrs?: Record<string, string> } };
+    return element?.di?.$attrs || {};
+  } catch {
+    return {};
+  }
+}
+
 function normalizeElementContent(raw: unknown, fallback: { id: string; nome: string; tipo?: string }): ElementContent {
   const r = raw as Record<string, unknown> | null | undefined;
   return {
@@ -86,6 +95,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const [isDragging, setIsDragging] = useState(false);
   const resizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const dragOriginRef = useRef<{ x: number; y: number; modalX: number; modalY: number } | null>(null);
+  const highlightedShapesRef = useRef<SVGElement[]>([]);
 
   const storageKey = useMemo(() => `bpmn_edits_${bpmnUrl}`, [bpmnUrl]);
 
@@ -127,11 +137,11 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
 
   const applyBizagiColors = useCallback((instance: { get: (name: string) => unknown }) => {
     try {
-      const elementRegistry = instance.get('elementRegistry') as { getAll: () => Array<{ id: string; businessObject?: Record<string, unknown> & { di?: { $attrs?: Record<string, string> }; get?: (k: string) => unknown }; type?: string }>; getGraphics: (el: { id: string }) => Element | null };
+      const elementRegistry = instance.get('elementRegistry') as { getAll: () => Array<{ id: string; di?: { $attrs?: Record<string, string> }; businessObject?: Record<string, unknown> & { get?: (k: string) => unknown }; type?: string }>; getGraphics: (el: { id: string }) => Element | null };
       for (const el of elementRegistry.getAll()) {
         const bo = el.businessObject;
         if (!bo) continue;
-        const attrs = (bo as { di?: { $attrs?: Record<string, string> } }).di?.$attrs || {};
+        const attrs = getElementDiAttrs(el);
         let fill = attrs['bioc:fill'] || attrs['bizagi:fillColor'] || attrs['color:background-color'] || attrs['bi:bgColor'] || attrs['fill'];
         let stroke = attrs['bioc:stroke'] || attrs['bizagi:strokeColor'] || attrs['color:border-color'] || attrs['bi:borderColor'] || attrs['stroke'];
         if (!fill && !stroke) {
@@ -205,6 +215,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           const x = firstText.getAttribute('x') ?? '0';
           const y = firstText.getAttribute('y') ?? '0';
           firstText.textContent = '';
+          firstText.removeAttribute('textLength');
           firstText.setAttribute('font-size', '12');
           firstText.setAttribute('fill', '#1a1a1a');
           if (lines.length === 1) {
@@ -213,14 +224,37 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
             lines.forEach((line, i) => {
               const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
               tspan.setAttribute('x', x);
-              tspan.setAttribute('dy', i === 0 ? '0' : '1.2em');
+              tspan.setAttribute('dy', i === 0 ? '0.3em' : '1.8em');
               tspan.textContent = line;
               firstText.appendChild(tspan);
             });
           }
+          firstText.setAttribute('y', y);
+
+          const annotationRect = visual.querySelector('rect') as SVGRectElement | null;
+          if (annotationRect) {
+            try {
+              const textBox = firstText.getBBox();
+              const rectWidth = Number(annotationRect.getAttribute('width') || 0);
+              const rectHeight = Number(annotationRect.getAttribute('height') || 0);
+              const minPadding = 12;
+              const neededWidth = Math.ceil(textBox.width + minPadding * 2);
+              const neededHeight = Math.ceil(textBox.height + minPadding * 2);
+
+              if (neededWidth > rectWidth) {
+                annotationRect.setAttribute('width', String(neededWidth));
+              }
+              if (neededHeight > rectHeight) {
+                annotationRect.setAttribute('height', String(neededHeight));
+              }
+            } catch {
+              // ignore BBox errors
+            }
+          }
         }
         textNodes.forEach((t: Element) => {
           const textEl = t as SVGTextElement;
+          textEl.removeAttribute('textLength');
           textEl.setAttribute('font-size', '12');
           textEl.setAttribute('fill', '#1a1a1a');
           textEl.style.fontSize = '12px';
@@ -236,10 +270,45 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     try {
       const elementRegistry = instance.get('elementRegistry') as { getAll: () => Array<{ id: string; type?: string }>; getGraphics: (el: { id: string }) => Element | null };
       for (const el of elementRegistry.getAll()) {
-        if (!/Task$/i.test(el.type || '')) continue;
         const gfx = elementRegistry.getGraphics(el);
-        const label = gfx?.querySelector('text');
+        const label = gfx?.querySelector('.djs-label text, text');
         if (!label) continue;
+
+        const visual = gfx?.querySelector('.djs-visual');
+        if (!visual) continue;
+
+        const mainShape = visual.querySelector('rect, path, polygon, circle, ellipse') as SVGGraphicsElement | null;
+        if (!mainShape) continue;
+
+        let labelBox: DOMRect | null = null;
+        let shapeBox: DOMRect | null = null;
+        try {
+          labelBox = (label as SVGGraphicsElement).getBBox();
+          shapeBox = mainShape.getBBox();
+        } catch {
+          continue;
+        }
+
+        const padding = 10;
+        if (mainShape.tagName.toLowerCase() === 'rect') {
+          const rect = mainShape as SVGRectElement;
+          const currentWidth = Number(rect.getAttribute('width') || shapeBox.width);
+          const currentHeight = Number(rect.getAttribute('height') || shapeBox.height);
+          const requiredWidth = Math.max(currentWidth, Math.ceil(labelBox.width + padding * 2));
+          const requiredHeight = Math.max(currentHeight, Math.ceil(labelBox.height + padding * 2));
+
+          if (requiredWidth > currentWidth) {
+            rect.setAttribute('width', String(requiredWidth));
+          }
+          if (requiredHeight > currentHeight) {
+            rect.setAttribute('height', String(requiredHeight));
+          }
+        }
+
+        const labelY = Number((label as SVGTextElement).getAttribute('y') || 0);
+        if (labelY < shapeBox.y + padding) {
+          (label as SVGTextElement).setAttribute('y', String(shapeBox.y + padding));
+        }
 
         const currentX = Number(label.getAttribute('x') || 0);
         if (currentX < 20) {
@@ -255,6 +324,85 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       }
     } catch (e) {
       console.warn('[BPMN] Falha ao ajustar sobreposição de texto:', e);
+    }
+  };
+
+  const fixAllTextSpacing = (instance: { get: (name: string) => unknown }) => {
+    try {
+      const elementRegistry = instance.get('elementRegistry') as { getAll: () => Array<{ id: string }>; getGraphics: (el: { id: string }) => Element | null };
+      for (const el of elementRegistry.getAll()) {
+        const gfx = elementRegistry.getGraphics(el);
+        if (!gfx) continue;
+        const textNodes = gfx.querySelectorAll('text');
+        textNodes.forEach((textNode) => {
+          textNode.removeAttribute('textLength');
+          textNode.setAttribute('font-size', '12');
+          textNode.style.fontSize = '12px';
+          textNode.style.overflow = 'visible';
+          const tspans = textNode.querySelectorAll('tspan');
+          tspans.forEach((tspan, index) => {
+            tspan.setAttribute('dy', index === 0 ? '0.3em' : '1.8em');
+          });
+        });
+      }
+    } catch (e) {
+      console.warn('[BPMN] Falha ao ajustar espaçamento global de textos:', e);
+    }
+  };
+
+  const restoreHighlightedShapes = useCallback(() => {
+    highlightedShapesRef.current.forEach((shape) => {
+      const originalFill = shape.getAttribute('data-original-fill');
+      if (originalFill === '__none__') {
+        shape.removeAttribute('fill');
+      } else if (originalFill != null) {
+        shape.setAttribute('fill', originalFill);
+      }
+      shape.removeAttribute('data-original-fill');
+    });
+    highlightedShapesRef.current = [];
+  }, []);
+
+  const applySelectionFill = useCallback((instance: { get: (name: string) => unknown }, elementId: string) => {
+    try {
+      const elementRegistry = instance.get('elementRegistry') as { get: (id: string) => { id: string } | null; getGraphics: (el: { id: string }) => Element | null };
+      const target = elementRegistry.get(elementId);
+      if (!target) return;
+      const gfx = elementRegistry.getGraphics(target);
+      const visual = gfx?.querySelector('.djs-visual');
+      if (!visual) return;
+
+      const candidates = visual.querySelectorAll('rect, path, polygon, circle, ellipse');
+      candidates.forEach((node) => {
+        const shape = node as SVGGraphicsElement;
+        if (shape.closest('.djs-label')) return;
+        try {
+          const box = shape.getBBox();
+          if (box.width < 18 && box.height < 18) return;
+        } catch {
+          // ignore bbox errors
+        }
+
+        if (!shape.hasAttribute('data-original-fill')) {
+          const currentFill = shape.getAttribute('fill');
+          shape.setAttribute('data-original-fill', currentFill ?? '__none__');
+        }
+        shape.setAttribute('fill', '#E3F2FD');
+        highlightedShapesRef.current.push(shape as unknown as SVGElement);
+      });
+    } catch (e) {
+      console.warn('[BPMN] Falha ao aplicar preenchimento de seleção:', e);
+    }
+  }, []);
+
+  const removeAssociationsFromXml = (xml: string): string => {
+    try {
+      return xml
+        .replace(/<bpmn:association\b[^>]*\/>/gi, '')
+        .replace(/<bpmn:Association\b[^>]*\/>/g, '')
+        .replace(/<bpmn:Association\b[\s\S]*?<\/bpmn:Association>/g, '');
+    } catch {
+      return xml;
     }
   };
 
@@ -309,7 +457,18 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         currentViewer = viewerInstance;
         setViewer(viewerInstance);
 
-        await viewerInstance.importXML(xml);
+        try {
+          await viewerInstance.importXML(xml);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error || '');
+          if (!/referenced by <bpmn:Association/i.test(message)) {
+            throw error;
+          }
+
+          console.warn('[BPMN] XML com associações inválidas. Tentando importar sem associações.');
+          const sanitizedXml = removeAssociationsFromXml(xml);
+          await viewerInstance.importXML(sanitizedXml);
+        }
 
         const canvas = viewerInstance.get('canvas') as {
           zoom: (arg?: string | number) => number | void;
@@ -330,6 +489,21 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         applyBizagiColors(viewerInstance);
         avoidTextOverlap(viewerInstance);
         ensureTextAnnotationsVisible(viewerInstance, annotationContents);
+        fixAllTextSpacing(viewerInstance);
+        setTimeout(() => {
+          try {
+            avoidTextOverlap(viewerInstance);
+            ensureTextAnnotationsVisible(viewerInstance, annotationContents);
+            fixAllTextSpacing(viewerInstance);
+            canvas.zoom('fit-viewport');
+            const currentZoom = (canvas.zoom as () => number)?.();
+            if (typeof currentZoom === 'number' && currentZoom > 0 && currentZoom < minZoom) {
+              canvas.zoom(minZoom);
+            }
+          } catch (e) {
+            console.warn('[BPMN] Falha no ajuste tardio de renderização:', e);
+          }
+        }, 280);
 
         const flat = descriptions?.elements || descriptions?.processes?.[Object.keys(descriptions?.processes || {})[0]]?.elements || {};
         const contentById = content?.elements || {};
@@ -349,10 +523,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           const id = e?.element?.id;
           if (!id) return;
           const elementRegistry = viewerInstance.get('elementRegistry') as { getAll: () => Array<{ id: string }> };
+          restoreHighlightedShapes();
           for (const el of elementRegistry.getAll()) {
             canvasSvc.removeMarker(el.id, 'bpmn-selected');
           }
           canvasSvc.addMarker(id, 'bpmn-selected');
+          applySelectionFill(viewerInstance, id);
         });
 
         eventBus.on('element.dblclick', 100, (e: { element?: { id: string; businessObject?: { id?: string; documentation?: Array<{ text?: string }>; name?: string }; type?: string } }) => {
@@ -408,13 +584,14 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       isAlive = false;
       if (currentViewer) {
         try {
+          restoreHighlightedShapes();
           currentViewer.destroy();
         } catch {
           // noop
         }
       }
     };
-  }, [bpmnUrl, descriptionsUrl, contentUrl, getLocalEdits, applyBizagiColors]);
+  }, [bpmnUrl, descriptionsUrl, contentUrl, getLocalEdits, applyBizagiColors, applySelectionFill, restoreHighlightedShapes]);
 
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
@@ -502,7 +679,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
       <style dangerouslySetInnerHTML={{ __html: `
         .quaddra-bpmn .djs-container,
         .quaddra-bpmn .djs-canvas,
-        .quaddra-bpmn svg { background: #fff !important; }
+        .quaddra-bpmn svg { background: #fff !important; overflow: visible !important; }
+        .quaddra-bpmn .djs-visual,
+        .quaddra-bpmn .djs-element text,
+        .quaddra-bpmn .djs-shape,
+        .quaddra-bpmn .djs-canvas,
+        .quaddra-bpmn .djs-container { overflow: visible !important; }
         .quaddra-bpmn .djs-element text { paint-order: stroke; stroke: #fff; stroke-width: 0.5px; fill: #1a1a1a; font-size: 12px; }
         .quaddra-bpmn .djs-element,
         .quaddra-bpmn .djs-element * { cursor: pointer !important; }
