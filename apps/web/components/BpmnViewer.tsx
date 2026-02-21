@@ -353,12 +353,21 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   const restoreHighlightedShapes = useCallback(() => {
     highlightedShapesRef.current.forEach((shape) => {
       const originalFill = shape.getAttribute('data-original-fill');
+      const originalStyleFill = shape.getAttribute('data-original-style-fill');
       if (originalFill === '__none__') {
         shape.removeAttribute('fill');
       } else if (originalFill != null) {
         shape.setAttribute('fill', originalFill);
       }
+
+      if (originalStyleFill === '__none__') {
+        shape.style.removeProperty('fill');
+      } else if (originalStyleFill != null) {
+        shape.style.setProperty('fill', originalStyleFill);
+      }
+
       shape.removeAttribute('data-original-fill');
+      shape.removeAttribute('data-original-style-fill');
     });
     highlightedShapesRef.current = [];
   }, []);
@@ -387,7 +396,12 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           const currentFill = shape.getAttribute('fill');
           shape.setAttribute('data-original-fill', currentFill ?? '__none__');
         }
+        if (!shape.hasAttribute('data-original-style-fill')) {
+          const currentStyleFill = shape.style.fill;
+          shape.setAttribute('data-original-style-fill', currentStyleFill || '__none__');
+        }
         shape.setAttribute('fill', '#E3F2FD');
+        shape.style.setProperty('fill', '#E3F2FD', 'important');
         highlightedShapesRef.current.push(shape as unknown as SVGElement);
       });
     } catch (e) {
@@ -519,8 +533,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
           if (!e?.element?.id) return;
           canvasSvc.removeMarker(e.element.id, 'bpmn-hovered');
         });
-        eventBus.on('element.click', 100, (e: { element?: { id: string } }) => {
-          const id = e?.element?.id;
+        eventBus.on('element.click', 100, (e: { element?: { id: string; labelTarget?: { id?: string } } }) => {
+          const id = e?.element?.labelTarget?.id || e?.element?.id;
           if (!id) return;
           const elementRegistry = viewerInstance.get('elementRegistry') as { getAll: () => Array<{ id: string }> };
           restoreHighlightedShapes();
