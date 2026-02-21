@@ -11,6 +11,7 @@ type ProcessSettingsModalProps = {
   processSlug: string;
   originalName: string;
   originalFileName: string;
+  initialTab?: 'name' | 'rename';
 };
 
 type Document = {
@@ -25,7 +26,8 @@ export default function ProcessSettingsModal({
   onClose,
   processSlug,
   originalName,
-  originalFileName
+  originalFileName,
+  initialTab,
 }: ProcessSettingsModalProps) {
   const { theme } = useTheme();
   const [customName, setCustomName] = useState('');
@@ -37,6 +39,7 @@ export default function ProcessSettingsModal({
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modalNodeRef = useRef<HTMLDivElement>(null);
   const [notificacao, setNotificacao] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; mensagem: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ titulo: string; mensagem: string; onConfirm: () => void } | null>(null);
 
@@ -65,7 +68,7 @@ export default function ProcessSettingsModal({
         console.warn('Erro ao carregar nome customizado:', e);
       }
       setNewFileName(originalFileName);
-      setShowFileRename(false);
+      setShowFileRename(initialTab === 'rename');
       setNewFolderName(''); // Resetar nome da nova pasta ao abrir
       
       // Carregar documentos e pastas disponíveis
@@ -73,7 +76,7 @@ export default function ProcessSettingsModal({
       loadAvailableFolders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, processSlug, originalFileName]);
+  }, [isOpen, processSlug, originalFileName, initialTab]);
 
   const loadDocuments = async () => {
     try {
@@ -273,8 +276,8 @@ export default function ProcessSettingsModal({
       )}
 
       <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100] p-4">
-      <Draggable handle=".drag-handle" bounds="parent">
-        <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <Draggable handle=".drag-handle" bounds="parent" nodeRef={modalNodeRef}>
+        <div ref={modalNodeRef} className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header arrastável */}
           <div 
             className="drag-handle flex justify-between items-center p-5 border-b border-gray-200 text-white cursor-move"
@@ -510,20 +513,6 @@ export default function ProcessSettingsModal({
                               {formatFileSize(doc.size)} • {new Date(doc.modified).toLocaleDateString('pt-BR')}
                             </p>
                           </div>
-                          <a
-                            href={doc.path}
-                            download
-                            className="ml-3 px-3 py-1 text-white rounded transition-colors text-sm font-medium"
-                            style={{ backgroundColor: theme.colors.primary }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = theme.colors.primaryHover;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = theme.colors.primary;
-                            }}
-                          >
-                            Download
-                          </a>
                         </div>
                       ))}
                     </div>

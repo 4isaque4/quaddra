@@ -17,6 +17,10 @@ function slugCollapseDashes(s: string): string {
   return s.replace(/-+/g, '-').replace(/^-|-$/g, '')
 }
 
+function slugCompact(s: string): string {
+  return slugCollapseDashes(s).replace(/[^a-z0-9]/g, '')
+}
+
 function getAllContentFiles(dir: string, baseDir: string, fileList: Array<{ path: string, name: string }> = []) {
   const files = readdirSync(dir)
 
@@ -50,16 +54,28 @@ export async function GET(
     const files = getAllContentFiles(contentDir, contentDir)
 
     const collapsedSlug = slugCollapseDashes(normalizedSlug)
+    const compactSlug = slugCompact(normalizedSlug)
     const matchingFile = files.find(({ path }) => {
       const fileSlug = normalizeSlug(path.replace(/\.json$/i, ''))
-      return fileSlug === normalizedSlug || slugCollapseDashes(fileSlug) === collapsedSlug
+      const collapsedFileSlug = slugCollapseDashes(fileSlug)
+      const compactFileSlug = slugCompact(fileSlug)
+      return (
+        fileSlug === normalizedSlug ||
+        collapsedFileSlug === collapsedSlug ||
+        compactFileSlug === compactSlug ||
+        compactFileSlug.endsWith(compactSlug) ||
+        compactSlug.endsWith(compactFileSlug)
+      )
     })
 
     if (!matchingFile) {
-      return NextResponse.json({ error: `Conteúdo não encontrado para slug: ${normalizedSlug}` }, { status: 404 })
+      return NextResponse.json(
+        { elements: {}, _meta: { found: false, slug: normalizedSlug } },
+        { headers: { 'Cache-Control': 'public, max-age=300' } },
+      )
     }
 
-    const filePath = join(contentDir, matchingFile.path.replace(/\//g, '\\'))
+    const filePath = join(contentDir, ...matchingFile.path.split('/'))
     const fileContent = readFileSync(filePath, 'utf8')
 
     return new NextResponse(fileContent, {

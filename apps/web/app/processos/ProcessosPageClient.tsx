@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header, Footer } from '@/components';
 import ProcessOrganizationModal from '@/components/ProcessOrganizationModal';
+import ProcessSettingsModal from '@/components/ProcessSettingsModal';
 import { useTheme } from '@/contexts/ThemeContext';
-import { FolderTree, Trash2 } from 'lucide-react';
+import { FolderTree, MoreVertical } from 'lucide-react';
 
 const ORDER_STORAGE_KEY_PREFIX = 'quaddra_organize_order_';
 
@@ -50,7 +51,23 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
   const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
   const [nomesCustomizados, setNomesCustomizados] = useState<Record<string, string>>({});
   const [isOrganizationModalOpen, setIsOrganizationModalOpen] = useState(false);
+  const [settingsTarget, setSettingsTarget] = useState<ProcessoItem | null>(null);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'name' | 'rename'>('name');
+  const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null);
   const [folderOrderMap, setFolderOrderMap] = useState<Record<string, string[]>>({});
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!openMenuSlug) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuContainerRef.current && !menuContainerRef.current.contains(target)) {
+        setOpenMenuSlug(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openMenuSlug]);
 
   useEffect(() => {
     try {
@@ -145,7 +162,16 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
     return () => clearTimeout(timer);
   }, [notificacao]);
 
-  const handleDeleteClick = (processo: ProcessoItem) => setProcessoADeletar(processo);
+  const handleDeleteClick = (processo: ProcessoItem) => {
+    setOpenMenuSlug(null);
+    setProcessoADeletar(processo);
+  };
+
+  const handleOpenSettings = (processo: ProcessoItem, tab: 'name' | 'rename') => {
+    setOpenMenuSlug(null);
+    setSettingsInitialTab(tab);
+    setSettingsTarget(processo);
+  };
 
   const handleConfirmDelete = async () => {
     if (!processoADeletar) return;
@@ -276,9 +302,41 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {sub.processos.map((item) => (
-                          <div key={item.slug} className="bg-white border border-gray-200 rounded-lg p-5">
+                          <div key={item.slug} className="bg-white border border-gray-200 rounded-lg p-5 relative">
                             <div className="flex items-start justify-between gap-2 mb-2">
                               <h3 className="text-base font-semibold text-gray-900">{getDisplayName(item)}</h3>
+                              <div className="relative" ref={openMenuSlug === item.slug ? menuContainerRef : undefined}>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenMenuSlug((prev) => (prev === item.slug ? null : item.slug))}
+                                  className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-100"
+                                  title="Mais opções"
+                                >
+                                  <MoreVertical className="w-4 h-4 text-gray-600" />
+                                </button>
+                                {openMenuSlug === item.slug && (
+                                  <div className="absolute right-0 mt-1 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-10 min-w-44">
+                                    <button
+                                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                      onClick={() => handleOpenSettings(item, 'name')}
+                                    >
+                                      Editar nome
+                                    </button>
+                                    <button
+                                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                      onClick={() => handleOpenSettings(item, 'rename')}
+                                    >
+                                      Renomear arquivo
+                                    </button>
+                                    <button
+                                      className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                      onClick={() => handleDeleteClick(item)}
+                                    >
+                                      Deletar
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="flex gap-2">
                               <Link
@@ -288,14 +346,6 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
                               >
                                 Abrir
                               </Link>
-                              <button
-                                onClick={() => handleDeleteClick(item)}
-                                disabled={deletando === item.slug}
-                                className="px-3 py-2 border border-gray-300 rounded transition-colors disabled:opacity-50 hover:bg-gray-50"
-                                title="Deletar"
-                              >
-                                <Trash2 className="w-4 h-4 text-gray-600" />
-                              </button>
                             </div>
                           </div>
                         ))}
@@ -365,6 +415,17 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
           window.location.reload();
         }}
       />
+
+      {settingsTarget && (
+        <ProcessSettingsModal
+          isOpen={!!settingsTarget}
+          onClose={() => setSettingsTarget(null)}
+          processSlug={settingsTarget.slug}
+          originalName={settingsTarget.nome}
+          originalFileName={settingsTarget.file.split('/').pop() || `${settingsTarget.nome}.bpmn`}
+          initialTab={settingsInitialTab}
+        />
+      )}
 
       {/* Modal de Confirmação - Minimalista */}
       {processoADeletar && (
