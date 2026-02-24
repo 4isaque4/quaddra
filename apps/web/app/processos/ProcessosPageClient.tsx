@@ -5,7 +5,6 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header, Footer } from '@/components';
-import ProcessOrganizationModal from '@/components/ProcessOrganizationModal';
 import ProcessSettingsModal from '@/components/ProcessSettingsModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { FolderTree, MoreVertical } from 'lucide-react';
@@ -50,7 +49,6 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
   const [processoADeletar, setProcessoADeletar] = useState<ProcessoItem | null>(null);
   const [notificacao, setNotificacao] = useState<Notificacao | null>(null);
   const [nomesCustomizados, setNomesCustomizados] = useState<Record<string, string>>({});
-  const [isOrganizationModalOpen, setIsOrganizationModalOpen] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState<ProcessoItem | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'name' | 'rename'>('name');
   const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null);
@@ -88,7 +86,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
     } catch {
       setFolderOrderMap({});
     }
-  }, [clientType, isOrganizationModalOpen]);
+  }, [clientType]);
 
   const getDisplayName = (processo: ProcessoItem) => nomesCustomizados[processo.slug] || processo.nome;
 
@@ -232,8 +230,8 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
               <h1 className="text-3xl font-bold text-gray-900">
                 Processos
               </h1>
-              <button
-                onClick={() => setIsOrganizationModalOpen(true)}
+              <Link
+                href={`${detectedBasePath}/processos/organizar` as Route}
                 className="flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors font-medium"
                 style={{
                   backgroundColor: theme.colors.primary,
@@ -247,7 +245,7 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
               >
                 <FolderTree className="w-5 h-5" />
                 Organizar
-              </button>
+              </Link>
             </div>
 
             {/* Barra de Busca compacta */}
@@ -403,18 +401,6 @@ export default function ProcessosPageClient({ processosIniciais, basePath = '' }
           </div>
         </div>
       )}
-
-      {/* Modal de Organização */}
-      <ProcessOrganizationModal
-        isOpen={isOrganizationModalOpen}
-        onClose={() => setIsOrganizationModalOpen(false)}
-        processos={processos}
-        clientType={detectedBasePath.includes('vale-shop') ? 'valeshop' : 'quaddra'}
-        onUpdate={() => {
-          // Recarregar processos
-          window.location.reload();
-        }}
-      />
 
       {settingsTarget && (
         <ProcessSettingsModal
