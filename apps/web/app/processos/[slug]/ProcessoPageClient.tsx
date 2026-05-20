@@ -75,7 +75,7 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
                 <DiagramaSelector processoAtual={processo} outrosDiagramas={outros} />
               </div>
             )}
-            <div className="h-[85vh] md:h-[88vh] flex flex-col">
+            <div className="h-[calc(100vh+160px)] md:h-[calc(100vh+220px)] flex flex-col">
               <BpmnViewer bpmnUrl={processo.bpmnUrl} descriptionsUrl={processo.descriptionsUrl} contentUrl={processo.contentUrl} />
             </div>
           </div>
