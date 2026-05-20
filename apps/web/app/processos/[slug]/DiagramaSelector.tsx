@@ -29,15 +29,15 @@ export default function DiagramaSelector({ processoAtual, outrosDiagramas }: Dia
   }
 
   return (
-    <div className="mb-6">
-      <label className="block text-sm font-semibold mb-2" style={{ color: theme.colors.text }}>
+    <div className="w-full">
+      <label className="block text-xs sm:text-sm font-semibold mb-1.5" style={{ color: theme.colors.text }}>
         Alternar Diagrama:
       </label>
       <select
         value={processoAtual.slug}
         onChange={(e) => handleDiagramaChange(e.target.value)}
-        className="px-4 py-2 border rounded-lg bg-white transition-all w-full max-w-md"
-        style={{ 
+        className="px-3 sm:px-4 py-2 text-sm border rounded-lg bg-white transition-all w-full sm:max-w-md"
+        style={{
           borderColor: '#d1d5db',
           color: theme.colors.text
         }}

@@ -684,6 +684,63 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
     });
   };
 
+  const getCanvasSvc = useCallback(() => {
+    if (!viewer) return null;
+    try {
+      return (viewer as { get: (name: string) => unknown }).get('canvas') as {
+        zoom: (arg?: string | number) => number | void;
+        scroll: (delta: { dx?: number; dy?: number }) => void;
+        viewbox: () => { width: number; height: number };
+      };
+    } catch {
+      return null;
+    }
+  }, [viewer]);
+
+  const scrollCanvas = useCallback((direction: 'up' | 'down') => {
+    const canvas = getCanvasSvc();
+    if (!canvas) return;
+    try {
+      const vb = canvas.viewbox();
+      const step = Math.max(80, Math.round(vb.height * 0.35));
+      canvas.scroll({ dy: direction === 'up' ? step : -step });
+    } catch (e) {
+      console.warn('[BPMN] Erro ao rolar diagrama:', e);
+    }
+  }, [getCanvasSvc]);
+
+  const zoomCanvas = useCallback((factor: number) => {
+    const canvas = getCanvasSvc();
+    if (!canvas) return;
+    try {
+      const current = (canvas.zoom as () => number)?.();
+      const next = typeof current === 'number' && current > 0
+        ? Math.max(0.15, Math.min(4, current * factor))
+        : 1;
+      canvas.zoom(next);
+    } catch (e) {
+      console.warn('[BPMN] Erro ao aplicar zoom:', e);
+    }
+  }, [getCanvasSvc]);
+
+  const recenterCanvas = useCallback(() => {
+    const canvas = getCanvasSvc();
+    if (!canvas) return;
+    try {
+      canvas.zoom('fit-viewport');
+      setTimeout(() => {
+        try {
+          const current = (canvas.zoom as () => number)?.();
+          if (typeof current === 'number' && current < 0.28 && current > 0) canvas.zoom(0.28);
+        } catch {
+          canvas.zoom(0.28);
+        }
+      }, 50);
+    } catch (e) {
+      console.warn('[BPMN] Erro ao recentralizar:', e);
+    }
+  }, [getCanvasSvc]);
+
   if (error) {
     return <div className="rounded-lg border p-4 text-sm" style={{ borderColor: theme.colors.accent }}>{error}</div>;
   }
@@ -709,37 +766,61 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         .quaddra-bpmn .djs-label { font-weight: 500; }
       ` }} />
       <div className="quaddra-bpmn rounded-lg border border-gray-200 bg-white flex-1 min-h-0 flex flex-col relative">
-        <div ref={canvasRef} className="w-full flex-1 min-h-[420px]" />
+        <div ref={canvasRef} className="w-full flex-1 min-h-[55vh] md:min-h-[420px]" />
         {viewer ? (
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                const canvas = (viewer as { get: (name: string) => unknown }).get('canvas') as { zoom: (arg?: string | number) => number | void };
-                if (canvas?.zoom) {
-                  canvas.zoom('fit-viewport');
-                  setTimeout(() => {
-                    try {
-                      const current = (canvas.zoom as () => number)?.();
-                      if (typeof current === 'number' && current < 0.28 && current > 0) canvas.zoom(0.28);
-                    } catch {
-                      canvas.zoom(0.28);
-                    }
-                  }, 50);
-                }
-              } catch (e) {
-                console.warn('[BPMN] Erro ao recentralizar:', e);
-              }
-            }}
-            className="absolute bottom-2 right-2 px-3 py-1.5 text-xs font-medium rounded-lg shadow-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors z-10"
-            title="Ajustar diagrama ao centro da tela"
-          >
-            Recentralizar
-          </button>
+          <>
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1.5 bg-white/95 backdrop-blur-sm rounded-lg shadow-md border border-gray-200 p-1.5">
+              <button
+                type="button"
+                onClick={() => scrollCanvas('up')}
+                className="w-9 h-9 flex items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition-colors"
+                title="Mover para cima"
+                aria-label="Mover diagrama para cima"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollCanvas('down')}
+                className="w-9 h-9 flex items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition-colors"
+                title="Mover para baixo"
+                aria-label="Mover diagrama para baixo"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              <div className="h-px bg-gray-200 my-0.5" />
+              <button
+                type="button"
+                onClick={() => zoomCanvas(1.2)}
+                className="w-9 h-9 flex items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition-colors text-lg font-semibold"
+                title="Aumentar zoom"
+                aria-label="Aumentar zoom"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomCanvas(1 / 1.2)}
+                className="w-9 h-9 flex items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition-colors text-lg font-semibold"
+                title="Diminuir zoom"
+                aria-label="Diminuir zoom"
+              >
+                −
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={recenterCanvas}
+              className="absolute bottom-2 right-2 px-3 py-1.5 text-xs font-medium rounded-lg shadow-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors z-10"
+              title="Ajustar diagrama ao centro da tela"
+            >
+              Recentralizar
+            </button>
+          </>
         ) : null}
       </div>
       <p className="mt-1 text-xs text-gray-400 text-center flex-shrink-0">
-        {viewer ? 'Duplo clique no elemento para detalhes' : 'Carregando...'}
+        {viewer ? 'Duplo clique no elemento — use as setas para navegar pelo fluxo' : 'Carregando...'}
       </p>
 
       {showModal && selected && editedData && (
