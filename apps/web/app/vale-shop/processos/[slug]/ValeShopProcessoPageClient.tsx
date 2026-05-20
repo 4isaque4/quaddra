@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components';
 import BpmnViewer from '@/components/BpmnViewer';
+import PageScrollControls from '@/components/PageScrollControls';
 import DiagramaSelector from '../../../processos/[slug]/DiagramaSelector';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -77,6 +78,7 @@ export default function ValeShopProcessoPageClient({ processo, outros }: ValeSho
           </div>
         </div>
       </main>
+      <PageScrollControls />
     </div>
   );
 }
