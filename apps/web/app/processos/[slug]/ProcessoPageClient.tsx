@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header } from '@/components';
 import BpmnViewer from '@/components/BpmnViewer';
+import PageScrollControls from '@/components/PageScrollControls';
 import DiagramaSelector from './DiagramaSelector';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -80,6 +81,7 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
           </div>
         </div>
       </main>
+      <PageScrollControls />
     </div>
   );
 }
