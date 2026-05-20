@@ -43,11 +43,11 @@ export default function ValeShopProcessoPageClient({ processo, outros }: ValeSho
   }, [processo.slug, processo.nome]);
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      <main className="flex-1 min-h-0 pt-20 md:pt-24 bg-gray-50 flex flex-col md:overflow-hidden">
-        <div className="px-3 sm:px-4 md:px-6 py-3 md:h-full flex flex-col gap-3 md:overflow-hidden">
-          <div className="flex-shrink-0 bg-white/95 rounded-xl px-3 sm:px-4 py-3 border" style={{ borderColor: '#e5e7eb' }}>
+      <main className="flex-1 pt-20 md:pt-24 pb-6">
+        <div className="px-3 sm:px-4 md:px-6 py-3 flex flex-col gap-3">
+          <div className="bg-white/95 rounded-xl px-3 sm:px-4 py-3 border" style={{ borderColor: '#e5e7eb' }}>
             <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
               <Link
                 href="/vale-shop/processos"
@@ -72,7 +72,7 @@ export default function ValeShopProcessoPageClient({ processo, outros }: ValeSho
             </p>
           </div>
 
-          <div className="bg-white rounded-xl border flex-1 min-h-[60vh] md:min-h-0 overflow-hidden flex flex-col" style={{ borderColor: '#dbe2ea' }}>
+          <div className="bg-white rounded-xl border h-[85vh] md:h-[88vh] overflow-hidden flex flex-col" style={{ borderColor: '#dbe2ea' }}>
             <BpmnViewer bpmnUrl={processo.bpmnUrl} descriptionsUrl={processo.descriptionsUrl} contentUrl={processo.contentUrl} />
           </div>
         </div>
