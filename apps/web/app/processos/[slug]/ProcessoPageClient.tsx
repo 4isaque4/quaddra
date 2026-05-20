@@ -47,14 +47,14 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
   }, [processo.slug, processo.nome]);
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col">
+    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col">
       <Header />
-      <main className="flex-1 min-h-0 pt-24 bg-gray-50 flex flex-col overflow-hidden">
-        <div className="container h-full py-3 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-shrink-0 mb-2">
+      <main className="flex-1 min-h-0 pt-20 md:pt-24 bg-gray-50 flex flex-col md:overflow-hidden">
+        <div className="container md:h-full py-3 px-3 sm:px-4 flex flex-col gap-2 min-h-0 md:overflow-hidden">
+          <div className="flex-shrink-0 mb-1">
             <Link
               href={`${basePath}/processos`}
-              className="inline-flex items-center font-semibold mb-2 transition-colors"
+              className="inline-flex items-center text-sm sm:text-base font-semibold mb-2 transition-colors"
               style={{ color: theme.colors.primary }}
               onMouseEnter={(e) => (e.currentTarget.style.color = theme.colors.primaryHover)}
               onMouseLeave={(e) => (e.currentTarget.style.color = theme.colors.primary)}
@@ -62,19 +62,19 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
               ← Voltar aos Processos
             </Link>
 
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">{displayName}</h1>
-            <p className="text-sm text-gray-600">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-1 break-words">{displayName}</h1>
+            <p className="text-xs sm:text-sm text-gray-600">
               Processo localizado em: <span className="font-semibold">{processo.categoria}</span>
             </p>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg flex-1 min-h-0 flex flex-col p-3 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-lg flex-1 min-h-[60vh] md:min-h-0 flex flex-col p-2 sm:p-3 overflow-hidden">
             {outros.length > 0 && (
               <div className="flex-shrink-0 mb-2">
                 <DiagramaSelector processoAtual={processo} outrosDiagramas={outros} />
               </div>
             )}
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               <BpmnViewer bpmnUrl={processo.bpmnUrl} descriptionsUrl={processo.descriptionsUrl} contentUrl={processo.contentUrl} />
             </div>
           </div>
