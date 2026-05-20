@@ -73,7 +73,7 @@ export default function ValeShopProcessoPageClient({ processo, outros }: ValeSho
             </p>
           </div>
 
-          <div className="bg-white rounded-xl border h-[85vh] md:h-[88vh] overflow-hidden flex flex-col" style={{ borderColor: '#dbe2ea' }}>
+          <div className="bg-white rounded-xl border h-[calc(100vh+160px)] md:h-[calc(100vh+220px)] overflow-hidden flex flex-col" style={{ borderColor: '#dbe2ea' }}>
             <BpmnViewer bpmnUrl={processo.bpmnUrl} descriptionsUrl={processo.descriptionsUrl} contentUrl={processo.contentUrl} />
           </div>
         </div>

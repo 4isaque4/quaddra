@@ -82,7 +82,6 @@ function normalizeElementContent(raw: unknown, fallback: { id: string; nome: str
 export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: BpmnViewerProps) {
   const { theme } = useTheme();
   const canvasRef = useRef<HTMLDivElement | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
   const [viewer, setViewer] = useState<unknown>(null);
   const [error, setError] = useState('');
@@ -699,16 +698,6 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   }, [viewer]);
 
   const scrollCanvas = useCallback((direction: 'up' | 'down') => {
-    const scrollArea = scrollAreaRef.current;
-    if (scrollArea && scrollArea.scrollHeight > scrollArea.clientHeight) {
-      const step = Math.max(240, Math.round(scrollArea.clientHeight * 0.65));
-      scrollArea.scrollBy({
-        top: direction === 'up' ? -step : step,
-        behavior: 'smooth',
-      });
-      return;
-    }
-
     const canvas = getCanvasSvc();
     if (!canvas) return;
     try {
@@ -721,23 +710,22 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
   }, [getCanvasSvc]);
 
   useEffect(() => {
-    const scrollArea = scrollAreaRef.current;
-    if (!scrollArea) return;
+    const canvasElement = canvasRef.current;
+    if (!canvasElement) return;
 
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
-      if (scrollArea.scrollHeight <= scrollArea.clientHeight) return;
-
-      scrollArea.scrollTop += event.deltaY;
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-        scrollArea.scrollLeft += event.deltaX;
-      }
+      window.scrollBy({
+        top: event.deltaY,
+        left: event.deltaX,
+        behavior: 'auto',
+      });
       event.preventDefault();
       event.stopPropagation();
     };
 
-    scrollArea.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-    return () => scrollArea.removeEventListener('wheel', handleWheel, { capture: true } as AddEventListenerOptions);
+    canvasElement.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => canvasElement.removeEventListener('wheel', handleWheel, { capture: true } as AddEventListenerOptions);
   }, [viewer]);
 
   const zoomCanvas = useCallback((factor: number) => {
@@ -797,13 +785,7 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         .quaddra-bpmn .djs-label { font-weight: 500; }
       ` }} />
       <div className="quaddra-bpmn rounded-lg border border-gray-200 bg-white flex-1 min-h-0 flex flex-col relative overflow-hidden">
-        <div
-          ref={scrollAreaRef}
-          className="flex-1 min-h-0 overflow-auto overscroll-contain"
-          style={{ scrollbarGutter: 'stable both-edges' }}
-        >
-          <div ref={canvasRef} className="w-full min-w-[1180px] min-h-[115vh] md:min-h-[1180px]" />
-        </div>
+        <div ref={canvasRef} className="w-full flex-1 min-h-[55vh] md:min-h-[420px]" />
         {viewer ? (
           <>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1.5 bg-white/95 backdrop-blur-sm rounded-lg shadow-md border border-gray-200 p-1.5">
