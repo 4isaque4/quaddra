@@ -47,11 +47,11 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
   }, [processo.slug, processo.nome]);
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      <main className="flex-1 min-h-0 pt-20 md:pt-24 bg-gray-50 flex flex-col md:overflow-hidden">
-        <div className="container md:h-full py-3 px-3 sm:px-4 flex flex-col gap-2 min-h-0 md:overflow-hidden">
-          <div className="flex-shrink-0 mb-1">
+      <main className="flex-1 pt-20 md:pt-24 pb-6">
+        <div className="container py-3 px-3 sm:px-4 flex flex-col gap-2">
+          <div className="mb-1">
             <Link
               href={`${basePath}/processos`}
               className="inline-flex items-center text-sm sm:text-base font-semibold mb-2 transition-colors"
@@ -68,13 +68,13 @@ export default function ProcessoPageClient({ processo, outros }: ProcessoPageCli
             </p>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg flex-1 min-h-[60vh] md:min-h-0 flex flex-col p-2 sm:p-3 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-lg flex flex-col p-2 sm:p-3">
             {outros.length > 0 && (
-              <div className="flex-shrink-0 mb-2">
+              <div className="mb-2">
                 <DiagramaSelector processoAtual={processo} outrosDiagramas={outros} />
               </div>
             )}
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="h-[85vh] md:h-[88vh] flex flex-col">
               <BpmnViewer bpmnUrl={processo.bpmnUrl} descriptionsUrl={processo.descriptionsUrl} contentUrl={processo.contentUrl} />
             </div>
           </div>
