@@ -609,6 +609,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         .quaddra-bpmn .djs-element.bpmn-selected .djs-visual > :first-child { stroke: ${theme.colors.primary} !important; stroke-width: 3px !important; }
         .quaddra-bpmn .bjs-powered-by { display: none !important; }
         .quaddra-bpmn .djs-overlay-container { pointer-events: none; }
+        .quaddra-bpmn .djs-shape .djs-visual > path {
+          stroke-width: 1.2px !important;
+          vector-effect: non-scaling-stroke;
+        }
       ` }} />
       <div className="quaddra-bpmn rounded-lg border border-gray-200 bg-white flex-1 min-h-0 flex flex-col relative overflow-hidden">
         <div ref={canvasRef} className="w-full flex-1 min-h-[55vh] md:min-h-[420px]" />
