@@ -292,8 +292,8 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         if (!xmlResp.ok) throw new Error(`BPMN não encontrado: ${bpmnUrl}`);
 
         const xml = await xmlResp.text();
-        const descriptions = descResp.ok ? await descResp.json() : {};
-        const content = contentResp && contentResp.ok ? await contentResp.json() : {};
+        const descriptions = descResp.ok ? await descResp.json().catch(() => ({})) : {};
+        const content = contentResp && contentResp.ok ? await contentResp.json().catch(() => ({})) : {};
         const bpmnTextFromXml = extractBpmnTextFromXml(xml);
 
         if (!isAlive || !canvasRef.current) return;
