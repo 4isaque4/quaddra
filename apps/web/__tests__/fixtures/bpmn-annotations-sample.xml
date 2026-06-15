@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <userTask id="Id_1fdd1f4f-5b6d-4139-b9c6-f88b99b3698d" name="Tarefa A"/>
+  <userTask id="Id_2510acca-715e-4a75-8046-1a70509c67e8" name="Tarefa B"/>
+  <userTask id="Id_13d656f3-c7f5-4644-a95a-ac94ac30dba9" name="Tarefa C"/>
+  <textAnnotation id="Id_4273827b-c366-4cec-b61f-a58ad147bd64">
+    <documentation />
+    <extensionElements>
+      <bizagi:BizagiExtensions xmlns:bizagi="http://www.bizagi.com/bpmn20">
+        <bizagi:BizagiProperties>
+          <bizagi:BizagiProperty name="bgColor" value="#D5D5D5" />
+        </bizagi:BizagiProperties>
+      </bizagi:BizagiExtensions>
+    </extensionElements>
+    <text>Mesmos campos de Empresas e Pessoas que Clientes</text>
+  </textAnnotation>
+  <textAnnotation id="Id_bcb47fe5-0b43-4733-9390-38fc2def7061">
+    <documentation />
+    <extensionElements>
+      <bizagi:BizagiExtensions xmlns:bizagi="http://www.bizagi.com/bpmn20">
+        <bizagi:BizagiProperties>
+          <bizagi:BizagiProperty name="bgColor" value="#D5D5D5" />
+        </bizagi:BizagiExtensions>
+    </extensionElements>
+    <text>CNPJ
+Inscrição Estadual
+QSA (quadro societário)</text>
+  </textAnnotation>
+  <textAnnotation id="Id_extra">
+    <text>Texto extra</text>
+  </textAnnotation>
+  <!-- Association: task -> textAnnotation (sourceRef=task, targetRef=annotation) -->
+  <association id="Id_assoc_1" sourceRef="Id_1fdd1f4f-5b6d-4139-b9c6-f88b99b3698d" targetRef="Id_bcb47fe5-0b43-4733-9390-38fc2def7061"/>
+  <!-- Association: task -> textAnnotation -->
+  <association id="Id_assoc_2" sourceRef="Id_13d656f3-c7f5-4644-a95a-ac94ac30dba9" targetRef="Id_4273827b-c366-4cec-b61f-a58ad147bd64"/>
+  <!-- Association: textAnnotation -> task (sourceRef=annotation, targetRef=task) -->
+  <association id="Id_assoc_3" sourceRef="Id_4273827b-c366-4cec-b61f-a58ad147bd64" targetRef="Id_2510acca-715e-4a75-8046-1a70509c67e8"/>
+</definitions>
