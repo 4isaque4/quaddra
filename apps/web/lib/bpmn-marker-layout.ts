@@ -22,6 +22,14 @@ export type MarkerPlacement = {
   box: BpmnLayoutBox;
 };
 
+export type MarkerRole = 'top' | 'bottom';
+
+export type ConnectionVisualProfile = {
+  fixedStroke: boolean;
+  markerSize: number;
+  strokeWidth: number;
+};
+
 type ChooseMarkerPlacementInput = {
   shapeBox: BpmnLayoutBox;
   markerBox: BpmnLayoutBox;
@@ -39,6 +47,8 @@ type RegistryElement = {
   type?: string;
   width?: number;
   height?: number;
+  labelTarget?: unknown;
+  waypoints?: unknown[];
   businessObject?: {
     $type?: string;
   };
@@ -106,6 +116,51 @@ export function chooseMarkerPlacement({
   };
 }
 
+export function getMarkerRoleForBox(shapeBox: BpmnLayoutBox, markerBox: BpmnLayoutBox): MarkerRole {
+  const centerY = markerBox.y + markerBox.height / 2;
+  return centerY >= shapeBox.y + shapeBox.height * 0.55 ? 'bottom' : 'top';
+}
+
+export function getCenteredLabelTransform({
+  containerBox,
+  labelBox,
+  insetX = 0,
+  insetY = 0,
+}: {
+  containerBox: BpmnLayoutBox;
+  labelBox: BpmnLayoutBox;
+  insetX?: number;
+  insetY?: number;
+}): { dx: number; dy: number } {
+  const contentHeight = Math.max(0, containerBox.height - insetY * 2);
+  const desiredX = containerBox.x + insetX;
+  const desiredY = containerBox.y + insetY + Math.max(0, (contentHeight - labelBox.height) / 2);
+
+  return {
+    dx: round(desiredX - labelBox.x),
+    dy: round(desiredY - labelBox.y),
+  };
+}
+
+export function normalizeBpmnDiagramVisuals(instance: ViewerWithRegistry): void {
+  arrangeBpmnActivityMarkers(instance);
+  normalizeBpmnTextAnnotations(instance);
+  normalizeBpmnExternalLabels(instance);
+  normalizeBpmnConnections(instance);
+}
+
+export function getConnectionVisualProfile(type: string): ConnectionVisualProfile {
+  if (type.includes('SequenceFlow')) {
+    return { fixedStroke: false, markerSize: 7.25, strokeWidth: 2 };
+  }
+
+  if (type.includes('MessageFlow') || type.includes('Association')) {
+    return { fixedStroke: false, markerSize: 7.5, strokeWidth: 1.5 };
+  }
+
+  return { fixedStroke: false, markerSize: 7.5, strokeWidth: 1.5 };
+}
+
 export function arrangeBpmnActivityMarkers(instance: ViewerWithRegistry): void {
   const elementRegistry = instance.get('elementRegistry') as ElementRegistry;
   if (!elementRegistry?.getAll || !elementRegistry?.getGraphics) return;
@@ -150,6 +205,21 @@ export function arrangeBpmnActivityMarkers(instance: ViewerWithRegistry): void {
 function isActivityElement(element: RegistryElement): boolean {
   const type = element.type || element.businessObject?.$type || '';
   return /\bbpmn:(?:.*Task|CallActivity|SubProcess|Transaction)\b/.test(type);
+}
+
+function isTextAnnotationElement(element: RegistryElement): boolean {
+  const type = element.type || element.businessObject?.$type || '';
+  return type.includes('TextAnnotation');
+}
+
+function isExternalLabelElement(element: RegistryElement): boolean {
+  return element.type === 'label' || Boolean(element.labelTarget);
+}
+
+function isConnectionElement(element: RegistryElement): boolean {
+  const type = element.type || element.businessObject?.$type || '';
+  return Array.isArray(element.waypoints)
+    || /\bbpmn:(?:SequenceFlow|Association|MessageFlow|DataInputAssociation|DataOutputAssociation)\b/.test(type);
 }
 
 function getDirectVisual(gfx: Element | null): SVGGElement | null {
@@ -200,7 +270,7 @@ function ensureMarkerGroups(visual: SVGGElement, shapeBox: BpmnLayoutBox): Array
     if (!(child instanceof SVGGraphicsElement)) return false;
     const tag = child.tagName.toLowerCase();
     if (![ 'path', 'rect', 'circle', 'ellipse', 'polygon' ].includes(tag)) return false;
-    const box = getSvgBox(child);
+    const box = getSvgBoxInSpace(child, visual);
     return box.width > 0 && box.height > 0 && box.width <= shapeBox.width * 0.75 && box.height <= shapeBox.height * 0.75;
   });
 
@@ -208,9 +278,8 @@ function ensureMarkerGroups(visual: SVGGElement, shapeBox: BpmnLayoutBox): Array
   const bottomNodes: SVGGraphicsElement[] = [];
 
   for (const node of markerNodes) {
-    const box = getSvgBox(node);
-    const centerY = box.y + box.height / 2;
-    if (centerY >= shapeBox.height * 0.55) {
+    const box = getSvgBoxInSpace(node, visual);
+    if (getMarkerRoleForBox(shapeBox, box) === 'bottom') {
       bottomNodes.push(node);
     } else {
       topNodes.push(node);
@@ -237,11 +306,137 @@ function wrapMarkerNodes(visual: SVGGElement, nodes: SVGGraphicsElement[], role:
   return group;
 }
 
+function normalizeBpmnTextAnnotations(instance: ViewerWithRegistry): void {
+  const elementRegistry = instance.get('elementRegistry') as ElementRegistry;
+  if (!elementRegistry?.getAll || !elementRegistry?.getGraphics) return;
+
+  for (const element of elementRegistry.getAll()) {
+    if (!isTextAnnotationElement(element)) continue;
+
+    const gfx = elementRegistry.getGraphics(element);
+    const visual = getDirectVisual(gfx);
+    if (!visual) continue;
+
+    visual.classList.add('qdx-bpmn-text-annotation');
+
+    const shapeBox = getElementBox(element, visual);
+    const label = getDirectLabel(visual);
+    const bracketStroke = getAnnotationStroke(visual);
+
+    for (const child of Array.from(visual.children)) {
+      if (!(child instanceof SVGGraphicsElement)) continue;
+      const tag = child.tagName.toLowerCase();
+
+      if (tag === 'rect') {
+        child.setAttribute('fill', 'none');
+        child.setAttribute('stroke', 'none');
+        child.setAttribute('stroke-width', '0');
+      }
+
+      if (tag === 'path') {
+        child.setAttribute('fill', 'none');
+        child.setAttribute('stroke', bracketStroke);
+        child.setAttribute('stroke-width', '1.4');
+        child.setAttribute('stroke-linecap', 'round');
+        child.setAttribute('stroke-linejoin', 'round');
+        child.setAttribute('vector-effect', 'non-scaling-stroke');
+      }
+    }
+
+    if (!label || shapeBox.width <= 0 || shapeBox.height <= 0) continue;
+
+    const labelBox = getSvgBox(label);
+    if (labelBox.width <= 0 || labelBox.height <= 0) continue;
+
+    const insetX = Math.max(12, Math.min(18, shapeBox.width * 0.11));
+    const transform = getCenteredLabelTransform({
+      containerBox: shapeBox,
+      labelBox,
+      insetX,
+      insetY: 4,
+    });
+
+    label.setAttribute('transform', `translate(${transform.dx} ${transform.dy})`);
+    label.setAttribute('data-qdx-label-normalized', 'text-annotation');
+  }
+}
+
+function normalizeBpmnExternalLabels(instance: ViewerWithRegistry): void {
+  const elementRegistry = instance.get('elementRegistry') as ElementRegistry;
+  if (!elementRegistry?.getAll || !elementRegistry?.getGraphics) return;
+
+  for (const element of elementRegistry.getAll()) {
+    if (!isExternalLabelElement(element)) continue;
+
+    const gfx = elementRegistry.getGraphics(element);
+    const visual = getDirectVisual(gfx);
+    if (!visual) continue;
+
+    const label = getDirectLabel(visual);
+    if (!label) continue;
+
+    const containerBox = getElementBox(element, visual);
+    const labelBox = getSvgBox(label);
+    if (containerBox.width <= 0 || containerBox.height <= 0 || labelBox.width <= 0 || labelBox.height <= 0) continue;
+
+    const transform = getCenteredBoxTransform(containerBox, labelBox);
+    label.setAttribute('transform', `translate(${transform.dx} ${transform.dy})`);
+    label.setAttribute('data-qdx-label-normalized', 'external');
+  }
+}
+
+function normalizeBpmnConnections(instance: ViewerWithRegistry): void {
+  const elementRegistry = instance.get('elementRegistry') as ElementRegistry;
+  if (!elementRegistry?.getAll || !elementRegistry?.getGraphics) return;
+
+  const normalizedMarkerRoots = new WeakSet<SVGSVGElement>();
+
+  for (const element of elementRegistry.getAll()) {
+    if (!isConnectionElement(element)) continue;
+
+    const gfx = elementRegistry.getGraphics(element);
+    const visual = getDirectVisual(gfx);
+    if (!visual) continue;
+
+    const svg = visual.ownerSVGElement;
+    if (svg && !normalizedMarkerRoots.has(svg)) {
+      normalizeSvgMarkers(svg);
+      normalizedMarkerRoots.add(svg);
+    }
+
+    for (const child of Array.from(visual.children)) {
+      if (!(child instanceof SVGPathElement)) continue;
+
+      const type = element.type || element.businessObject?.$type || '';
+      const profile = getConnectionVisualProfile(type);
+
+      child.setAttribute('stroke-linecap', 'round');
+      child.setAttribute('stroke-linejoin', 'round');
+      child.setAttribute('stroke-width', String(profile.strokeWidth));
+      child.style.setProperty('stroke-width', String(profile.strokeWidth));
+
+      if (profile.fixedStroke) {
+        child.setAttribute('vector-effect', 'non-scaling-stroke');
+      } else {
+        child.removeAttribute('vector-effect');
+        child.style.removeProperty('vector-effect');
+      }
+    }
+  }
+}
+
 function applyMarkerTransform(group: SVGGElement, markerBox: BpmnLayoutBox, placement: MarkerPlacement): void {
   const tx = placement.box.x - markerBox.x * placement.scale;
   const ty = placement.box.y - markerBox.y * placement.scale;
   group.setAttribute('transform', `translate(${round(tx)} ${round(ty)}) scale(${round(placement.scale)})`);
   group.setAttribute('data-qdx-marker-position', placement.position);
+}
+
+function getCenteredBoxTransform(containerBox: BpmnLayoutBox, labelBox: BpmnLayoutBox): { dx: number; dy: number } {
+  return {
+    dx: round(containerBox.x + containerBox.width / 2 - (labelBox.x + labelBox.width / 2)),
+    dy: round(containerBox.y + containerBox.height / 2 - (labelBox.y + labelBox.height / 2)),
+  };
 }
 
 function getPositionedMarkerBox(
@@ -293,6 +488,79 @@ function getSvgBox(node: SVGGraphicsElement): BpmnLayoutBox {
   } catch {
     return ZERO_BOX;
   }
+}
+
+function getSvgBoxInSpace(node: SVGGraphicsElement, relativeTo: SVGGraphicsElement): BpmnLayoutBox {
+  const box = getSvgBox(node);
+  if (box.width <= 0 || box.height <= 0) return box;
+
+  try {
+    const nodeMatrix = node.getCTM();
+    const relativeMatrix = relativeTo.getCTM();
+    if (!nodeMatrix || !relativeMatrix) return box;
+
+    return transformBox(box, relativeMatrix.inverse().multiply(nodeMatrix));
+  } catch {
+    return box;
+  }
+}
+
+function transformBox(box: BpmnLayoutBox, matrix: DOMMatrix): BpmnLayoutBox {
+  const points = [
+    transformPoint(box.x, box.y, matrix),
+    transformPoint(box.x + box.width, box.y, matrix),
+    transformPoint(box.x, box.y + box.height, matrix),
+    transformPoint(box.x + box.width, box.y + box.height, matrix),
+  ];
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function transformPoint(x: number, y: number, matrix: DOMMatrix): { x: number; y: number } {
+  return {
+    x: matrix.a * x + matrix.c * y + matrix.e,
+    y: matrix.b * x + matrix.d * y + matrix.f,
+  };
+}
+
+function getAnnotationStroke(visual: SVGGElement): string {
+  const path = Array.from(visual.children).find((child): child is SVGGraphicsElement => {
+    return child instanceof SVGGraphicsElement && child.tagName.toLowerCase() === 'path';
+  });
+  const stroke = path?.getAttribute('stroke');
+
+  return stroke && stroke !== 'none' ? stroke : '#252a33';
+}
+
+function normalizeSvgMarkers(svg: SVGSVGElement | null): void {
+  if (!svg) return;
+
+  svg.querySelectorAll('marker').forEach((marker) => {
+    const path = marker.querySelector('path, polygon, circle');
+    const isSequenceArrow = path?.tagName.toLowerCase() === 'path'
+      && (path.getAttribute('d') || '').replace(/\s+/g, ' ').trim() === 'M 1 5 L 11 10 L 1 15 Z';
+    const profile = getConnectionVisualProfile(isSequenceArrow ? 'bpmn:SequenceFlow' : '');
+
+    marker.setAttribute('markerWidth', String(profile.markerSize));
+    marker.setAttribute('markerHeight', String(profile.markerSize));
+    marker.setAttribute('overflow', 'visible');
+    marker.querySelectorAll('path, polygon, circle').forEach((shape) => {
+      shape.setAttribute('stroke-linejoin', 'round');
+      shape.removeAttribute('vector-effect');
+      (shape as SVGElement).style.removeProperty('vector-effect');
+    });
+  });
 }
 
 function expandBox(box: BpmnLayoutBox, amount: number): BpmnLayoutBox {

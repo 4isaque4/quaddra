@@ -6,7 +6,7 @@ import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 import { useTheme } from '@/contexts/ThemeContext';
 import { extractBpmnTextFromXml } from '@/lib/bpmn-text-extract';
-import { arrangeBpmnActivityMarkers } from '@/lib/bpmn-marker-layout';
+import { normalizeBpmnDiagramVisuals } from '@/lib/bpmn-marker-layout';
 import { createBpmnViewerOptions, type BpmnViewerOptions } from '@/lib/bpmn-viewer-config';
 
 type BpmnViewerProps = {
@@ -335,10 +335,10 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         }, 50);
 
         applyBizagiColors(viewerInstance);
-        arrangeBpmnActivityMarkers(viewerInstance);
+        normalizeBpmnDiagramVisuals(viewerInstance);
         setTimeout(() => {
           try {
-            arrangeBpmnActivityMarkers(viewerInstance);
+            normalizeBpmnDiagramVisuals(viewerInstance);
             canvas.zoom('fit-viewport');
             const currentZoom = (canvas.zoom as () => number)?.();
             if (typeof currentZoom === 'number' && currentZoom > 0 && currentZoom < minZoom) {
@@ -618,6 +618,9 @@ export default function BpmnViewer({ bpmnUrl, descriptionsUrl, contentUrl }: Bpm
         .quaddra-bpmn .qdx-bpmn-marker circle,
         .quaddra-bpmn .qdx-bpmn-marker ellipse,
         .quaddra-bpmn .qdx-bpmn-marker polygon { fill: none !important; stroke-width: 0.85px !important; vector-effect: non-scaling-stroke; }
+        .quaddra-bpmn .qdx-bpmn-text-annotation > rect { fill: none !important; stroke: none !important; }
+        .quaddra-bpmn .qdx-bpmn-text-annotation > path { fill: none !important; stroke-width: 1.4px !important; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+        .quaddra-bpmn .djs-connection .djs-visual > path { stroke-linecap: round; stroke-linejoin: round; }
       ` }} />
       <div className="quaddra-bpmn rounded-lg border border-gray-200 bg-white flex-1 min-h-0 flex flex-col relative overflow-hidden">
         <div ref={canvasRef} className="w-full flex-1 min-h-[55vh] md:min-h-[420px]" />
