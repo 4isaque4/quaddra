@@ -8,8 +8,16 @@ describe('createBpmnViewerOptions', () => {
 
     expect(options.container).toBe(container);
     expect(options.textRenderer).toEqual({
-      defaultStyle: { fontSize: 10, lineHeight: 1.1 },
-      externalStyle: { fontSize: 10, lineHeight: 1.1 },
+      defaultStyle: {
+        fontFamily: 'Segoe UI, Arial, sans-serif',
+        fontSize: 8,
+        lineHeight: 1.05,
+      },
+      externalStyle: {
+        fontFamily: 'Segoe UI, Arial, sans-serif',
+        fontSize: 8,
+        lineHeight: 1.05,
+      },
     });
   });
 });
