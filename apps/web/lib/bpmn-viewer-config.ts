@@ -1,9 +1,11 @@
 export type BpmnTextRendererConfig = {
   defaultStyle: {
+    fontFamily: string;
     fontSize: number;
     lineHeight: number;
   };
   externalStyle: {
+    fontFamily: string;
     fontSize: number;
     lineHeight: number;
   };
@@ -15,8 +17,16 @@ export type BpmnViewerOptions = {
 };
 
 const BIZAGI_TEXT_RENDERER: BpmnTextRendererConfig = {
-  defaultStyle: { fontSize: 10, lineHeight: 1.1 },
-  externalStyle: { fontSize: 10, lineHeight: 1.1 },
+  defaultStyle: {
+    fontFamily: 'Segoe UI, Arial, sans-serif',
+    fontSize: 8,
+    lineHeight: 1.05,
+  },
+  externalStyle: {
+    fontFamily: 'Segoe UI, Arial, sans-serif',
+    fontSize: 8,
+    lineHeight: 1.05,
+  },
 };
 
 export function createBpmnViewerOptions(container: HTMLDivElement): BpmnViewerOptions {
